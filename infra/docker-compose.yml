@@ -1,0 +1,169 @@
+version: '3.9'
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentinel_db
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: sentinel_minio
+      MINIO_ROOT_PASSWORD: sentinel_minio_pass
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      ALLOW_RESET: "true"
+
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  backend:
+    build:
+      context: ../apps/backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sentinel:sentinel_pass@postgres:5432/sentinel_db
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: sentinel_minio
+      MINIO_SECRET_KEY: sentinel_minio_pass
+      MINIO_BUCKET: apk-uploads
+      STATIC_ANALYSIS_URL: http://static-analysis:8010
+      DYNAMIC_ANALYSIS_URL: http://dynamic-analysis:8011
+      THREAT_INTEL_URL: http://threat-intel:8012
+      RAG_ENGINE_URL: http://rag-engine:8013
+      AI_ENGINE_URL: http://ai-investigation-engine:8014
+      FRAUD_ENGINE_URL: http://fraud-intent-engine:8015
+      RISK_SCORING_URL: http://risk-scoring:8016
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../apps/frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  static-analysis:
+    build:
+      context: ../services/static-analysis
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+
+  dynamic-analysis:
+    build:
+      context: ../services/dynamic-analysis
+    restart: unless-stopped
+    ports:
+      - "8011:8011"
+
+  threat-intel:
+    build:
+      context: ../services/threat-intel
+    restart: unless-stopped
+    ports:
+      - "8012:8012"
+    environment:
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      MALWAREBAZAAR_API_KEY: ${MALWAREBAZAAR_API_KEY:-}
+
+  rag-engine:
+    build:
+      context: ../services/rag-engine
+    restart: unless-stopped
+    ports:
+      - "8013:8013"
+    environment:
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      OLLAMA_URL: http://ollama:11434
+    volumes:
+      - ../services/rag-engine/knowledge_base:/app/knowledge_base
+    depends_on:
+      - chromadb
+      - ollama
+
+  ai-investigation-engine:
+    build:
+      context: ../services/ai-investigation-engine
+    restart: unless-stopped
+    ports:
+      - "8014:8014"
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      RAG_ENGINE_URL: http://rag-engine:8013
+    depends_on:
+      - ollama
+      - rag-engine
+
+  fraud-intent-engine:
+    build:
+      context: ../services/fraud-intent-engine
+    restart: unless-stopped
+    ports:
+      - "8015:8015"
+    environment:
+      OLLAMA_URL: http://ollama:11434
+    depends_on:
+      - ollama
+
+  risk-scoring:
+    build:
+      context: ../services/risk-scoring
+    restart: unless-stopped
+    ports:
+      - "8016:8016"
+
+volumes:
+  postgres_data:
+  minio_data:
+  chroma_data:
+  ollama_data:

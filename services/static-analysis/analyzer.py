@@ -1,0 +1,180 @@
+import logging
+import re
+from pathlib import Path
+from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
+
+DANGEROUS_PERMISSIONS = {
+    "READ_SMS", "RECEIVE_SMS", "SEND_SMS",
+    "READ_CONTACTS", "WRITE_CONTACTS",
+    "RECORD_AUDIO", "CAMERA",
+    "READ_CALL_LOG", "WRITE_CALL_LOG",
+    "PROCESS_OUTGOING_CALLS",
+    "BIND_ACCESSIBILITY_SERVICE",
+    "BIND_DEVICE_ADMIN",
+    "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE",
+    "GET_ACCOUNTS", "USE_CREDENTIALS",
+    "SYSTEM_ALERT_WINDOW",
+    "RECEIVE_BOOT_COMPLETED",
+    "PACKAGE_USAGE_STATS",
+    "REQUEST_INSTALL_PACKAGES",
+}
+
+SUSPICIOUS_APIS = [
+    "getDeviceId", "getSubscriberId", "getImei", "getSimSerialNumber",
+    "sendTextMessage", "sendMultipartTextMessage",
+    "execCommand", "exec(", "Runtime.getRuntime",
+    "DexClassLoader", "PathClassLoader", "InMemoryDexClassLoader",
+    "AccessibilityService", "performGlobalAction",
+    "getInstalledPackages", "getInstalledApplications",
+    "Cipher.getInstance", "SecretKeySpec",
+    "Base64.decode", "getDeclaredMethod",
+]
+
+
+def extract_permissions(apk_path: str) -> List[Dict]:
+    try:
+        from androguard.misc import AnalyzeAPK
+        a, _, _ = AnalyzeAPK(apk_path)
+        permissions = []
+        for perm in a.get_permissions():
+            short = perm.split(".")[-1]
+            permissions.append({
+                "name": short,
+                "full": perm,
+                "dangerous": short in DANGEROUS_PERMISSIONS,
+            })
+        return permissions
+    except Exception as exc:
+        logger.warning("Permission extraction failed: %s", exc)
+        return []
+
+
+def extract_manifest_info(apk_path: str) -> Dict:
+    try:
+        from androguard.misc import AnalyzeAPK
+        a, _, _ = AnalyzeAPK(apk_path)
+        return {
+            "package_name": a.get_package(),
+            "version_name": a.get_androidversion_name(),
+            "version_code": a.get_androidversion_code(),
+            "min_sdk": a.get_min_sdk_version(),
+            "target_sdk": a.get_target_sdk_version(),
+            "activities": [str(x) for x in a.get_activities()],
+            "services": [str(x) for x in a.get_services()],
+            "receivers": [str(x) for x in a.get_receivers()],
+        }
+    except Exception as exc:
+        logger.warning("Manifest extraction failed: %s", exc)
+        return {}
+
+
+def detect_suspicious_apis(apk_path: str) -> List[str]:
+    found = set()
+    try:
+        from androguard.misc import AnalyzeAPK
+        _, d, dx = AnalyzeAPK(apk_path)
+        for method in dx.get_methods():
+            src = str(method.get_method())
+            for api in SUSPICIOUS_APIS:
+                if api in src:
+                    found.add(api)
+    except Exception as exc:
+        logger.warning("API detection failed: %s", exc)
+    return list(found)
+
+
+def check_obfuscation(apk_path: str) -> bool:
+    try:
+        from androguard.misc import AnalyzeAPK
+        _, _, dx = AnalyzeAPK(apk_path)
+        short_names, total = 0, 0
+        for cls in dx.get_classes():
+            name = cls.get_vm_class().get_name().split("/")[-1].strip(";")
+            total += 1
+            if len(name) <= 2 and name.isalpha():
+                short_names += 1
+        return total > 0 and (short_names / total) > 0.3
+    except Exception:
+        return False
+
+
+def detect_dynamic_code_loading(apk_path: str) -> bool:
+    loaders = {"DexClassLoader", "PathClassLoader", "InMemoryDexClassLoader"}
+    try:
+        from androguard.misc import AnalyzeAPK
+        _, _, dx = AnalyzeAPK(apk_path)
+        for cls in dx.get_classes():
+            name = cls.get_vm_class().get_name()
+            if any(loader in name for loader in loaders):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def extract_strings(apk_path: str) -> Dict:
+    urls, ips = [], []
+    url_re = re.compile(r'https?://[^\s"\'<>]{8,}')
+    ip_re = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
+    try:
+        from androguard.misc import AnalyzeAPK
+        a, d, _ = AnalyzeAPK(apk_path)
+        for dex in d:
+            for s in dex.get_strings():
+                text = str(s)
+                urls += url_re.findall(text)
+                ips += ip_re.findall(text)
+    except Exception as exc:
+        logger.warning("String extraction failed: %s", exc)
+    return {
+        "hardcoded_urls": list(set(urls))[:30],
+        "hardcoded_ips": list(set(ips))[:20],
+    }
+
+
+def run_yara_scan(apk_path: str, rules_dir: str) -> List[str]:
+    matches = []
+    try:
+        import yara
+        for rule_file in Path(rules_dir).glob("*.yar"):
+            rules = yara.compile(str(rule_file))
+            matches.extend(str(m) for m in rules.match(apk_path))
+    except Exception as exc:
+        logger.warning("YARA scan failed: %s", exc)
+    return matches
+
+
+def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
+    permissions = extract_permissions(apk_path)
+    manifest = extract_manifest_info(apk_path)
+    suspicious_apis = detect_suspicious_apis(apk_path)
+    obfuscated = check_obfuscation(apk_path)
+    dynamic_loading = detect_dynamic_code_loading(apk_path)
+    strings = extract_strings(apk_path)
+    yara_matches = run_yara_scan(apk_path, rules_dir)
+
+    dangerous = [p for p in permissions if p["dangerous"]]
+    risk_score = len(dangerous) + len(suspicious_apis) + len(yara_matches) * 3
+    if obfuscated:
+        risk_score += 5
+    if dynamic_loading:
+        risk_score += 4
+
+    return {
+        "permissions": permissions,
+        "dangerous_permission_count": len(dangerous),
+        "manifest": manifest,
+        "suspicious_apis": suspicious_apis,
+        "obfuscation_detected": obfuscated,
+        "dynamic_code_loading": dynamic_loading,
+        "hardcoded_urls": strings["hardcoded_urls"],
+        "hardcoded_ips": strings["hardcoded_ips"],
+        "yara_matches": yara_matches,
+        "risk_indicator_count": risk_score,
+        "iocs": {
+            "domains": list({u.split("/")[2] for u in strings["hardcoded_urls"] if "://" in u}),
+            "ips": strings["hardcoded_ips"],
+        },
+    }

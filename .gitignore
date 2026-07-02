@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Environment
+.env
+*.env.local
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Uploads / generated
+uploads/
+reports/
+*.apk
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker
+*.log
+
+# ML models
+*.pkl
+*.joblib
+*.xgb
+models/saved/
+
+# DB
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PDF submission
+boi_submission.pdf
+boi-submisson.pdf
