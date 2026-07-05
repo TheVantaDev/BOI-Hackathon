@@ -1,0 +1,16 @@
+MITRE ATT&CK Mobile - T1412: Capture SMS Messages
+Tactic: Credential Access, Collection
+
+Description:
+A malicious Android application can read incoming SMS messages to steal sensitive data transmitted over text, most commonly one-time passwords (OTPs) and multi-factor authentication codes sent by banks. To do this, the app typically requests the READ_SMS or RECEIVE_SMS permission at install time or, on newer Android versions, at runtime. Once granted, the app registers a broadcast receiver that intercepts incoming SMS messages before or as they arrive, extracts codes using pattern matching (commonly regex looking for 4-6 digit sequences near words like "OTP" or "code"), and forwards them to an attacker-controlled server, often over HTTP or via a second SMS to an attacker-owned number.
+
+Relevance to banking trojans:
+This is one of the most common techniques used by Android banking malware to defeat SMS-based two-factor authentication. An attacker who has already stolen a victim's banking credentials (often via an overlay attack) can use SMS interception to also capture the OTP needed to complete a fraudulent transaction, effectively bypassing two-factor protection entirely.
+
+Detection indicators:
+- Presence of READ_SMS, RECEIVE_SMS, or SEND_SMS permissions in an app with no legitimate messaging functionality
+- Runtime registration of a BroadcastReceiver for android.provider.Telephony.SMS_RECEIVED
+- Regex patterns in decompiled code matching OTP-style numeric codes
+- Outbound network requests immediately following SMS receipt events
+
+Known malware families using this technique: Anubis, Cerberus, FluBot, TeaBot, SharkBot, and other Android banking trojan families documented since 2019.

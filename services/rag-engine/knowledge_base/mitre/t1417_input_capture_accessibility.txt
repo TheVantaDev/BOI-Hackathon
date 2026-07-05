@@ -1,0 +1,17 @@
+MITRE ATT&CK Mobile - T1417: Input Capture
+Sub-techniques: T1417.001 Keylogging, T1417.002 GUI Input Capture
+Tactic: Collection, Credential Access
+
+Description:
+Adversaries abuse Android's Accessibility Service, an API intended to help users with disabilities interact with their device, to capture what a user types or taps on screen. A malicious app requests BIND_ACCESSIBILITY_SERVICE permission, often disguising the request as necessary for some unrelated feature (a flashlight app requesting accessibility access is a classic red flag). Once granted, the accessibility service can read the content of any screen displayed to the user, including text fields, and can also draw an overlay on top of a legitimate banking app's login screen (T1417.002, GUI Input Capture) that visually mimics the real interface, tricking the user into entering credentials into the attacker's overlay instead of the real app.
+
+Relevance to banking trojans:
+Overlay attacks combined with accessibility abuse are the single most common credential-theft mechanism in modern Android banking malware. The malware detects when a targeted banking app is launched (via monitoring foreground app changes, itself an accessibility capability), then instantly draws a pixel-perfect fake login screen on top of it.
+
+Detection indicators:
+- BIND_ACCESSIBILITY_SERVICE permission requested by an app with no accessibility-related purpose
+- SYSTEM_ALERT_WINDOW permission (needed to draw overlays on top of other apps)
+- Code monitoring TYPE_WINDOW_STATE_CHANGED accessibility events to detect foreground app switches
+- A hardcoded list of banking package names the app checks against
+
+Known malware families: Cerberus, Anubis, BRATA, and most major Android banking trojan families rely on this technique as their primary credential-harvesting method.

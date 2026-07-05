@@ -1,0 +1,14 @@
+CAPEC-98: Phishing / CAPEC-164: Mobile Phishing / CAPEC-163: Spear Phishing
+
+Description:
+Phishing (CAPEC-98) is an attack pattern in which an adversary impersonates a trusted entity to deceive a victim into taking an action that benefits the attacker, such as clicking a malicious link, downloading a file, or divulging sensitive information. Mobile Phishing (CAPEC-164), a specific variation, targets mobile phone users specifically, commonly via SMS ("smishing"). Spear Phishing (CAPEC-163) is a more targeted variant tailored to a specific individual or narrow group to increase perceived legitimacy and success rate.
+
+Relationship: these three patterns sit under the broader Identity Spoofing (CAPEC-151) category, since all of them fundamentally rely on the attacker successfully impersonating a trusted identity (a bank, a courier service, a government agency) to manipulate victim behavior.
+
+Relevance to Android banking malware:
+Mobile Phishing is the dominant real-world delivery mechanism for Android banking trojans. A typical campaign sends a mass SMS blast impersonating a courier company, tax authority, or bank, containing a link to a malicious APK download disguised as a legitimate app update or tracking tool. Because the message appears to come from a plausible, expected source and creates urgency (a package needs redelivery, a tax refund is pending, an account needs urgent verification), victims are induced to sideload the APK and grant it dangerous permissions without close scrutiny.
+
+Detection-relevant signals for this project's threat-intel layer:
+- URLs embedded in APK metadata or code matching known phishing/APK-hosting domain patterns (checked against URLHaus/OpenPhish-style blocklists)
+- APK naming conventions that mimic legitimate service names (e.g., "IndiaPost_Tracking.apk", "KYC_Update.apk")
+- Distribution channel metadata indicating delivery outside the Play Store

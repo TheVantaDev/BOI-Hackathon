@@ -1,0 +1,16 @@
+MITRE ATT&CK Mobile - T1638: Adversary-in-the-Middle
+Tactic: Credential Access, Collection
+
+Description:
+A malicious application positions itself between the victim's device and the legitimate network destination to intercept, read, or modify traffic in transit. On Android this is commonly done by installing a rogue root CA certificate (with user consent obtained through social engineering), configuring a malicious VPN profile, or routing traffic through an attacker-controlled proxy configured via the app's own network settings. This technique superseded and merged the older "Network Traffic Capture or Redirection" technique.
+
+Relevance to banking trojans:
+Once positioned as an intermediary, malware can intercept banking session tokens, inject additional transaction requests into what looks like a legitimate banking session, or modify the destination account number in a wire transfer request without either the user or the bank's basic validation immediately noticing (a "transaction injection" or "session riding" attack).
+
+Detection indicators:
+- App requests to install a user-level VPN profile or CA certificate
+- Unusual proxy configuration changes at the OS network settings level
+- TLS certificate pinning failures or unexpected certificate chains observed during dynamic analysis network capture
+- Traffic to known banking domains routed through non-standard intermediate hosts
+
+Note: This is a lower-frequency technique compared to SMS interception and overlay attacks in mass-market Android banking trojans, but it appears in more sophisticated, targeted campaigns.

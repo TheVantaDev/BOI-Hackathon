@@ -1,0 +1,12 @@
+CAPEC-151: Identity Spoofing / CAPEC-94: Adversary in the Middle (AiTM)
+
+Description:
+Identity Spoofing (CAPEC-151) describes an attack pattern where an adversary assumes the identity of a legitimate, trusted user or system to deceive a target into taking an action or divulging information they would not otherwise provide to an unknown or untrusted party. This is a broad parent category that includes phishing variants, counterfeit websites/organizations, and certificate/signature spoofing. Adversary in the Middle (CAPEC-94) is a related pattern where the attacker positions themselves between two communicating parties to intercept or alter the communication, often to steal credentials or session data in transit.
+
+Relevance to Android banking malware:
+Overlay attacks, as used extensively by Android banking trojans, are a direct application of Identity Spoofing at the UI layer: the malware spoofs the visual identity of the legitimate banking application's login screen so convincingly that the user cannot distinguish it from the real interface, and enters credentials believing they are interacting with their actual bank. Similarly, malware exhibiting T1638 (Adversary-in-the-Middle, MITRE ATT&CK Mobile) behavior — rogue certificate installation, malicious VPN/proxy configuration — is a direct real-world instance of CAPEC-94.
+
+Detection-relevant signals:
+- Bundled UI assets (layouts, images, WebView HTML) closely matching known banking app visual branding
+- Runtime overlay window creation targeting a specific foreground package
+- Certificate installation prompts or VPN/proxy configuration changes triggered by the app without corresponding legitimate functionality

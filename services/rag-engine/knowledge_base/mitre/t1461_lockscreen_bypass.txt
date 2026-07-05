@@ -1,0 +1,15 @@
+MITRE ATT&CK Mobile - T1461: Lockscreen Bypass
+Tactic: Initial Access, Defense Evasion
+
+Description:
+Malware may attempt to bypass or manipulate the device lockscreen to gain persistent access even when the device is supposedly secured. Documented real-world methods include tricking the user into unlocking the device through social engineering (fake system prompts asking to unlock "to complete an update"), abusing accessibility services to programmatically dismiss lock prompts, or in some documented cases (e.g., the BRATA malware family), triggering a factory reset after completing fraud to destroy evidence and forensic traces.
+
+Relevance to banking trojans:
+Advanced Android banking trojans use lockscreen bypass in two ways: first, to maintain access to the device for a longer window to complete fraudulent transactions even if the user attempts to lock the phone; second, some families trigger a full factory reset as a final step after stealing funds, both wiping evidence of the malware and preventing the victim from quickly seeing suspicious activity in banking apps.
+
+Detection indicators:
+- Accessibility service actions targeting system lockscreen UI elements
+- Requests for Device Administrator privileges (needed to trigger a factory reset programmatically)
+- Code paths that call wipeData() or similar Device Policy Manager APIs
+
+Known malware families: BRATA is the most documented family using this technique, specifically the self-wipe behavior after fraud completion.

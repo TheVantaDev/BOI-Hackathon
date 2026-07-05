@@ -1,0 +1,14 @@
+MITRE ATT&CK Mobile - T1476: Deliver Malicious App via Other Means
+Tactic: Initial Access
+
+Description:
+Adversaries distribute malicious Android applications outside the Google Play Store (sideloading), commonly through phishing links sent via SMS ("smishing"), fake update prompts, or third-party app stores. The malicious APK frequently disguises itself as a legitimate or plausible application — a fake banking security update, a fake courier/delivery tracking app, or a fake system utility (flashlight, cleaner, battery saver) — to lower the victim's suspicion during installation and permission grants.
+
+Relevance to banking trojans:
+This is almost always the entry point for Android banking malware campaigns, since banking trojans virtually never appear on the official Play Store in significant numbers due to Google's vetting. The masquerading identity (e.g., "looks like a bank security app") also directly supports later social engineering, since the user already believes the app has a legitimate reason to request sensitive permissions like SMS access or Accessibility Service.
+
+Detection indicators:
+- APK signed with a certificate unrelated to the claimed developer identity
+- Package name mismatched with declared app name/icon (e.g., package name unrelated to a "flashlight" branding)
+- App requests permissions disproportionate to its stated function (a flashlight app requesting SMS and Accessibility access)
+- Installation source metadata indicating sideloading rather than Play Store
