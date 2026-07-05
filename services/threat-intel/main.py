@@ -5,7 +5,10 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from ioc_lookup import check_domain, check_ip, check_hash, map_to_mitre
+from ioc_lookup import (
+    check_domain, check_ip, check_hash,
+    check_urls_batch, map_to_mitre,
+)
 
 app = FastAPI(title="Threat Intelligence Service")
 logger = logging.getLogger(__name__)
@@ -15,6 +18,7 @@ class IOCPayload(BaseModel):
     domains: List[str] = []
     ips: List[str] = []
     hashes: List[str] = []
+    urls: List[str] = []
 
 
 @app.post("/lookup")
@@ -29,7 +33,9 @@ async def lookup_iocs(payload: IOCPayload):
         asyncio.gather(*hash_tasks),
     )
 
-    all_indicators = list(domain_results) + list(ip_results) + list(hash_results)
+    url_results = await check_urls_batch(payload.urls)
+
+    all_indicators = list(domain_results) + list(ip_results) + list(hash_results) + url_results
     malicious = [i for i in all_indicators if i["malicious"]]
 
     static_context = {
@@ -45,7 +51,9 @@ async def lookup_iocs(payload: IOCPayload):
         "malicious_domains": [i["indicator"] for i in domain_results if i["malicious"]],
         "malicious_ips": [i["indicator"] for i in ip_results if i["malicious"]],
         "malicious_hashes": [i["indicator"] for i in hash_results if i["malicious"]],
+        "malicious_urls": [i["indicator"] for i in url_results if i["malicious"]],
         "mitre_techniques": mitre_techniques,
+        "sources_used": ["urlhaus", "openphish", "abuseipdb", "malwarebazaar", "local_blocklist"],
     }
 
 

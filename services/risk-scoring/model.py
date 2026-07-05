@@ -8,12 +8,17 @@ import numpy as np
 from feature_extractor import extract_features, FEATURE_NAMES
 
 logger = logging.getLogger(__name__)
-MODEL_PATH = Path("/app/models/xgb_risk_model.pkl")
+MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.pkl"))
+
+# Severity scores per class — must match training order in notebook
+# CLASSES = ["Benign", "Riskware", "Adware", "SMS", "Banking"]
+SEVERITY_VEC = np.array([5, 35, 55, 75, 95], dtype=np.float32)
+CLASS_NAMES = ["Benign", "Riskware", "Adware", "SMS", "Banking"]
 
 _model = None
 
 
-def _load_or_create_model():
+def _load_model():
     global _model
     if _model is not None:
         return _model
@@ -23,26 +28,95 @@ def _load_or_create_model():
         _model = joblib.load(MODEL_PATH)
         logger.info("Loaded XGBoost model from %s", MODEL_PATH)
     else:
-        logger.warning("No trained model found — using heuristic scoring")
+        logger.warning("No trained model found at %s — using heuristic scoring", MODEL_PATH)
         _model = "heuristic"
 
     return _model
 
 
 def predict_score(features: np.ndarray) -> float:
-    model = _load_or_create_model()
+    model = _load_model()
 
     if model == "heuristic":
         return _heuristic_score(features)
 
     try:
         import xgboost as xgb
+
         dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
-        prob = model.predict(dmatrix)[0]
-        return round(float(prob) * 100, 1)
+
+        # model was trained with multi:softprob — output shape is (n_samples, n_classes)
+        proba = model.predict(dmatrix, iteration_range=(0, model.best_iteration + 1))
+        proba = np.array(proba).reshape(-1, len(CLASS_NAMES))
+
+        # weighted sum: proba[0] @ severity_vec gives a continuous 0-100 risk score
+        risk_score = float(proba[0] @ SEVERITY_VEC)
+        return round(min(max(risk_score, 0.0), 100.0), 1)
+
     except Exception as exc:
-        logger.warning("XGBoost prediction failed, using heuristic: %s", exc)
+        logger.warning("XGBoost prediction failed, falling back to heuristic: %s", exc)
         return _heuristic_score(features)
+
+
+def predict_class(features: np.ndarray) -> Dict:
+    model = _load_model()
+
+    if model == "heuristic":
+        return {"class": "Unknown", "probabilities": {}}
+
+    try:
+        import xgboost as xgb
+
+        dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
+        proba = model.predict(dmatrix, iteration_range=(0, model.best_iteration + 1))
+        proba = np.array(proba).reshape(-1, len(CLASS_NAMES))[0]
+
+        pred_idx = int(np.argmax(proba))
+        return {
+            "class": CLASS_NAMES[pred_idx],
+            "confidence": round(float(proba[pred_idx]), 4),
+            "probabilities": {cls: round(float(p), 4) for cls, p in zip(CLASS_NAMES, proba)},
+        }
+    except Exception as exc:
+        logger.warning("Class prediction failed: %s", exc)
+        return {"class": "Unknown", "probabilities": {}}
+
+
+def explain_score(features: np.ndarray) -> List[Dict]:
+    model = _load_model()
+
+    if model == "heuristic":
+        return _heuristic_explanation(features)
+
+    try:
+        import shap
+        import xgboost as xgb
+
+        explainer = shap.TreeExplainer(model)
+        raw_shap = explainer.shap_values(features.reshape(1, -1))
+
+        # multi:softprob returns shape (n_classes, n_samples, n_features)
+        # collapse across classes using mean absolute value to get one value per feature
+        sv = np.asarray(raw_shap)
+        if sv.ndim == 3:
+            mean_abs_shap = np.abs(sv).mean(axis=(0, 1))
+        elif sv.ndim == 2:
+            mean_abs_shap = np.abs(sv).mean(axis=0)
+        else:
+            mean_abs_shap = np.abs(sv)
+
+        return [
+            {
+                "feature": FEATURE_NAMES[i],
+                "value": float(features[i]),
+                "shap_value": round(float(mean_abs_shap[i]), 4),
+                "direction": "increases_risk" if mean_abs_shap[i] > 0 else "neutral",
+            }
+            for i in range(len(FEATURE_NAMES))
+        ]
+    except Exception as exc:
+        logger.warning("SHAP explanation failed: %s", exc)
+        return _heuristic_explanation(features)
 
 
 def _heuristic_score(features: np.ndarray) -> float:
@@ -63,34 +137,7 @@ def _heuristic_score(features: np.ndarray) -> float:
 
     normalizers = np.array([10, 10, 5, 1, 1, 10, 5, 1, 1, 5, 3, 1], dtype=np.float32)
     normalized = np.clip(features / normalizers, 0, 1)
-    raw = float(np.dot(normalized, weights))
-    return round(min(raw, 100.0), 1)
-
-
-def explain_score(features: np.ndarray) -> List[Dict]:
-    model = _load_or_create_model()
-
-    try:
-        import shap
-        import xgboost as xgb
-
-        if model == "heuristic":
-            raise ValueError("No model for SHAP")
-
-        explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(features.reshape(1, -1))[0]
-
-        return [
-            {
-                "feature": name,
-                "value": float(features[i]),
-                "shap_value": round(float(shap_values[i]), 4),
-                "direction": "increases_risk" if shap_values[i] > 0 else "decreases_risk",
-            }
-            for i, name in enumerate(FEATURE_NAMES)
-        ]
-    except Exception:
-        return _heuristic_explanation(features)
+    return round(min(float(np.dot(normalized, weights)), 100.0), 1)
 
 
 def _heuristic_explanation(features: np.ndarray) -> List[Dict]:
@@ -104,23 +151,3 @@ def _heuristic_explanation(features: np.ndarray) -> List[Dict]:
         }
         for i in range(len(FEATURE_NAMES))
     ]
-
-
-def train_model(X: np.ndarray, y: np.ndarray):
-    import xgboost as xgb
-    import joblib
-
-    dtrain = xgb.DMatrix(X, label=y, feature_names=FEATURE_NAMES)
-    params = {
-        "objective": "reg:squarederror",
-        "max_depth": 4,
-        "eta": 0.1,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "eval_metric": "rmse",
-    }
-    model = xgb.train(params, dtrain, num_boost_round=100)
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, MODEL_PATH)
-    logger.info("Model trained and saved to %s", MODEL_PATH)
-    return model

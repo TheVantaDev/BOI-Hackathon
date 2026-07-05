@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from feature_extractor import extract_features
-from model import predict_score, explain_score
+from model import predict_score, predict_class, explain_score
 from classifier import classify
 
 app = FastAPI(title="Risk Scoring Service")
@@ -25,6 +25,7 @@ def score(req: ScoringRequest):
         data = req.dict()
         features = extract_features(data)
         risk_score = predict_score(features)
+        malware_class = predict_class(features)
         severity_info = classify(risk_score)
         shap_values = explain_score(features)
 
@@ -32,6 +33,8 @@ def score(req: ScoringRequest):
             "score": risk_score,
             "severity": severity_info["severity"],
             "classification": severity_info["classification"],
+            "malware_family": malware_class["class"],
+            "class_probabilities": malware_class.get("probabilities", {}),
             "recommended_action": severity_info["action"],
             "shap_values": shap_values,
         }
@@ -41,6 +44,8 @@ def score(req: ScoringRequest):
             "score": 50.0,
             "severity": "Suspicious",
             "classification": "Unknown",
+            "malware_family": "Unknown",
+            "class_probabilities": {},
             "recommended_action": "Manual review recommended.",
             "shap_values": [],
         }

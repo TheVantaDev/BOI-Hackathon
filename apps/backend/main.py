@@ -28,7 +28,13 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Database unavailable on startup (is PostgreSQL running?): %s", exc
+        )
 
 
 @app.get("/health", tags=["Health"])
