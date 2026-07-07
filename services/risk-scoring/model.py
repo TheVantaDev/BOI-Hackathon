@@ -8,7 +8,7 @@ import numpy as np
 from feature_extractor import extract_features, FEATURE_NAMES
 
 logger = logging.getLogger(__name__)
-MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.pkl"))
+MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.json"))
 
 # Severity scores per class — must match training order in notebook
 # CLASSES = ["Benign", "Riskware", "Adware", "SMS", "Banking"]
@@ -24,8 +24,9 @@ def _load_model():
         return _model
 
     if MODEL_PATH.exists():
-        import joblib
-        _model = joblib.load(MODEL_PATH)
+        import xgboost as xgb
+        _model = xgb.Booster()
+        _model.load_model(str(MODEL_PATH))
         logger.info("Loaded XGBoost model from %s", MODEL_PATH)
     else:
         logger.warning("No trained model found at %s — using heuristic scoring", MODEL_PATH)
@@ -46,7 +47,9 @@ def predict_score(features: np.ndarray) -> float:
         dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
 
         # model was trained with multi:softprob — output shape is (n_samples, n_classes)
-        proba = model.predict(dmatrix, iteration_range=(0, model.best_iteration + 1))
+        best_iteration = getattr(model, 'best_iteration', 0)
+        iteration_range = (0, best_iteration + 1) if best_iteration > 0 else (0, 0)
+        proba = model.predict(dmatrix, iteration_range=iteration_range)
         proba = np.array(proba).reshape(-1, len(CLASS_NAMES))
 
         # weighted sum: proba[0] @ severity_vec gives a continuous 0-100 risk score
@@ -68,7 +71,9 @@ def predict_class(features: np.ndarray) -> Dict:
         import xgboost as xgb
 
         dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
-        proba = model.predict(dmatrix, iteration_range=(0, model.best_iteration + 1))
+        best_iteration = getattr(model, 'best_iteration', 0)
+        iteration_range = (0, best_iteration + 1) if best_iteration > 0 else (0, 0)
+        proba = model.predict(dmatrix, iteration_range=iteration_range)
         proba = np.array(proba).reshape(-1, len(CLASS_NAMES))[0]
 
         pred_idx = int(np.argmax(proba))
@@ -95,15 +100,12 @@ def explain_score(features: np.ndarray) -> List[Dict]:
         explainer = shap.TreeExplainer(model)
         raw_shap = explainer.shap_values(features.reshape(1, -1))
 
-        # multi:softprob returns shape (n_classes, n_samples, n_features)
-        # collapse across classes using mean absolute value to get one value per feature
-        sv = np.asarray(raw_shap)
-        if sv.ndim == 3:
-            mean_abs_shap = np.abs(sv).mean(axis=(0, 1))
-        elif sv.ndim == 2:
-            mean_abs_shap = np.abs(sv).mean(axis=0)
-        else:
-            mean_abs_shap = np.abs(sv)
+        sv = np.asarray(raw_shap) if not isinstance(raw_shap, list) else np.stack(raw_shap, axis=0)
+
+        # Collapse every axis except the one matching len(FEATURE_NAMES)
+        feat_axis = sv.shape.index(len(FEATURE_NAMES))
+        other_axes = tuple(a for a in range(sv.ndim) if a != feat_axis)
+        mean_abs_shap = np.abs(sv).mean(axis=other_axes)
 
         return [
             {

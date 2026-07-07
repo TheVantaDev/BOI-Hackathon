@@ -9,7 +9,7 @@ COPY . .
 
 RUN mkdir -p /app/models
 
-ENV MODEL_PATH=/app/models/xgb_risk_model.pkl
+ENV MODEL_PATH=/app/models/xgb_risk_model.json
 
 EXPOSE 8016
 
