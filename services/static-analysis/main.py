@@ -32,8 +32,40 @@ async def analyze(ref: APKRef):
         tmp_path = tmp.name
 
     try:
+        # Run standard static analysis rules
         result = analyze_apk(tmp_path, RULES_DIR)
         result["apk_id"] = ref.apk_id
+
+        # Run decompilation pipeline
+        decompiled_info = {}
+        try:
+            from analyzer import decompile_apk
+            import shutil
+
+            decomp_res, temp_dir = decompile_apk(tmp_path, ref.apk_id)
+
+            # Upload apktool zip if generated
+            if "apktool_zip" in decomp_res:
+                apktool_zip_local = decomp_res["apktool_zip"]
+                apktool_minio_key = f"{ref.apk_id}/decompiled_apktool.zip"
+                with open(apktool_zip_local, "rb") as f:
+                    _upload_to_minio(f"apk-uploads/{apktool_minio_key}", f.read())
+                decompiled_info["apktool_path"] = f"apk-uploads/{apktool_minio_key}"
+
+            # Upload jadx zip if generated
+            if "jadx_zip" in decomp_res:
+                jadx_zip_local = decomp_res["jadx_zip"]
+                jadx_minio_key = f"{ref.apk_id}/decompiled_jadx.zip"
+                with open(jadx_zip_local, "rb") as f:
+                    _upload_to_minio(f"apk-uploads/{jadx_minio_key}", f.read())
+                decompiled_info["jadx_path"] = f"apk-uploads/{jadx_minio_key}"
+
+            # Clean up temp directory
+            shutil.rmtree(temp_dir)
+        except Exception as decomp_exc:
+            logger.exception("Decompilation pipeline failed: %s", decomp_exc)
+
+        result["decompiled"] = decompiled_info
         return result
     except Exception as exc:
         logger.exception("Analysis failed for %s: %s", ref.apk_id, exc)
@@ -63,6 +95,41 @@ def _fetch_from_minio(minio_path: str) -> bytes:
     )
     resp = client.get_object(Bucket=bucket, Key=key)
     return resp["Body"].read()
+
+
+def _upload_to_minio(minio_path: str, data: bytes, content_type: str = "application/zip"):
+    import boto3
+    from botocore.client import Config
+    import io
+
+    endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
+    access_key = os.getenv("MINIO_ACCESS_KEY", "sentinel_minio")
+    secret_key = os.getenv("MINIO_SECRET_KEY", "sentinel_minio_pass")
+
+    parts = minio_path.split("/", 1)
+    bucket, key = parts[0], parts[1]
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{endpoint}",
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(signature_version="s3v4"),
+        region_name="us-east-1",
+    )
+    # Ensure bucket exists
+    try:
+        client.head_bucket(Bucket=bucket)
+    except Exception:
+        client.create_bucket(Bucket=bucket)
+
+    client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=io.BytesIO(data),
+        ContentLength=len(data),
+        ContentType=content_type,
+    )
 
 
 def _stub_result(apk_id: str) -> dict:
