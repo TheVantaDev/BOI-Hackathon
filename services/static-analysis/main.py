@@ -1,11 +1,17 @@
+import asyncio
+import io
 import logging
 import os
+import shutil
 import tempfile
+from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException
+import boto3
+from botocore.client import Config
+from fastapi import FastAPI
 from pydantic import BaseModel
 
-from analyzer import analyze_apk
+from analyzer import analyze_apk, decompile_apk
 
 app = FastAPI(title="Static Analysis Service")
 logger = logging.getLogger(__name__)
@@ -17,6 +23,74 @@ class APKRef(BaseModel):
     apk_id: str
     minio_path: str
     sha256: str
+
+
+def _get_minio_client():
+    endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
+    access_key = os.getenv("MINIO_ACCESS_KEY", "sentinel_minio")
+    secret_key = os.getenv("MINIO_SECRET_KEY", "sentinel_minio_pass")
+    return boto3.client(
+        "s3",
+        endpoint_url=f"http://{endpoint}",
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(signature_version="s3v4"),
+        region_name="us-east-1",
+    )
+
+
+def _fetch_from_minio(minio_path: str) -> bytes:
+    client = _get_minio_client()
+    parts = minio_path.split("/", 1)
+    bucket, key = parts[0], parts[1]
+    resp = client.get_object(Bucket=bucket, Key=key)
+    return resp["Body"].read()
+
+
+def _upload_to_minio(minio_path: str, data: bytes, content_type: str = "application/zip"):
+    client = _get_minio_client()
+    parts = minio_path.split("/", 1)
+    bucket, key = parts[0], parts[1]
+    try:
+        client.head_bucket(Bucket=bucket)
+    except Exception:
+        client.create_bucket(Bucket=bucket)
+
+    client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=io.BytesIO(data),
+        ContentLength=len(data),
+        ContentType=content_type,
+    )
+
+
+def _run_analysis(tmp_path: str, apk_id: str):
+    result = analyze_apk(tmp_path, RULES_DIR)
+    result["apk_id"] = apk_id
+
+    decompiled_info = {}
+    try:
+        decomp_res, temp_dir = decompile_apk(tmp_path, apk_id)
+
+        if "apktool_zip" in decomp_res:
+            apktool_minio_key = f"{apk_id}/decompiled_apktool.zip"
+            with open(decomp_res["apktool_zip"], "rb") as f:
+                _upload_to_minio(f"apk-uploads/{apktool_minio_key}", f.read())
+            decompiled_info["apktool_path"] = f"apk-uploads/{apktool_minio_key}"
+
+        if "jadx_zip" in decomp_res:
+            jadx_minio_key = f"{apk_id}/decompiled_jadx.zip"
+            with open(decomp_res["jadx_zip"], "rb") as f:
+                _upload_to_minio(f"apk-uploads/{jadx_minio_key}", f.read())
+            decompiled_info["jadx_path"] = f"apk-uploads/{jadx_minio_key}"
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    except Exception as decomp_exc:
+        logger.exception("Decompilation pipeline failed: %s", decomp_exc)
+
+    result["decompiled"] = decompiled_info
+    return result
 
 
 @app.post("/analyze")
@@ -32,109 +106,23 @@ async def analyze(ref: APKRef):
         tmp_path = tmp.name
 
     try:
-        # Run standard static analysis rules
-        result = analyze_apk(tmp_path, RULES_DIR)
-        result["apk_id"] = ref.apk_id
-
-        # Run decompilation pipeline
-        decompiled_info = {}
-        try:
-            from analyzer import decompile_apk
-            import shutil
-
-            decomp_res, temp_dir = decompile_apk(tmp_path, ref.apk_id)
-
-            # Upload apktool zip if generated
-            if "apktool_zip" in decomp_res:
-                apktool_zip_local = decomp_res["apktool_zip"]
-                apktool_minio_key = f"{ref.apk_id}/decompiled_apktool.zip"
-                with open(apktool_zip_local, "rb") as f:
-                    _upload_to_minio(f"apk-uploads/{apktool_minio_key}", f.read())
-                decompiled_info["apktool_path"] = f"apk-uploads/{apktool_minio_key}"
-
-            # Upload jadx zip if generated
-            if "jadx_zip" in decomp_res:
-                jadx_zip_local = decomp_res["jadx_zip"]
-                jadx_minio_key = f"{ref.apk_id}/decompiled_jadx.zip"
-                with open(jadx_zip_local, "rb") as f:
-                    _upload_to_minio(f"apk-uploads/{jadx_minio_key}", f.read())
-                decompiled_info["jadx_path"] = f"apk-uploads/{jadx_minio_key}"
-
-            # Clean up temp directory
-            shutil.rmtree(temp_dir)
-        except Exception as decomp_exc:
-            logger.exception("Decompilation pipeline failed: %s", decomp_exc)
-
-        result["decompiled"] = decompiled_info
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _run_analysis, tmp_path, ref.apk_id)
         return result
     except Exception as exc:
         logger.exception("Analysis failed for %s: %s", ref.apk_id, exc)
         return _stub_result(ref.apk_id)
     finally:
-        os.unlink(tmp_path)
-
-
-def _fetch_from_minio(minio_path: str) -> bytes:
-    import boto3
-    from botocore.client import Config
-
-    endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
-    access_key = os.getenv("MINIO_ACCESS_KEY", "sentinel_minio")
-    secret_key = os.getenv("MINIO_SECRET_KEY", "sentinel_minio_pass")
-
-    parts = minio_path.split("/", 1)
-    bucket, key = parts[0], parts[1]
-
-    client = boto3.client(
-        "s3",
-        endpoint_url=f"http://{endpoint}",
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
-    resp = client.get_object(Bucket=bucket, Key=key)
-    return resp["Body"].read()
-
-
-def _upload_to_minio(minio_path: str, data: bytes, content_type: str = "application/zip"):
-    import boto3
-    from botocore.client import Config
-    import io
-
-    endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
-    access_key = os.getenv("MINIO_ACCESS_KEY", "sentinel_minio")
-    secret_key = os.getenv("MINIO_SECRET_KEY", "sentinel_minio_pass")
-
-    parts = minio_path.split("/", 1)
-    bucket, key = parts[0], parts[1]
-
-    client = boto3.client(
-        "s3",
-        endpoint_url=f"http://{endpoint}",
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
-    # Ensure bucket exists
-    try:
-        client.head_bucket(Bucket=bucket)
-    except Exception:
-        client.create_bucket(Bucket=bucket)
-
-    client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=io.BytesIO(data),
-        ContentLength=len(data),
-        ContentType=content_type,
-    )
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def _stub_result(apk_id: str) -> dict:
     return {
         "apk_id": apk_id,
+        "_stub": True,
         "permissions": [
             {"name": "READ_SMS", "full": "android.permission.READ_SMS", "dangerous": True},
             {"name": "RECEIVE_SMS", "full": "android.permission.RECEIVE_SMS", "dangerous": True},

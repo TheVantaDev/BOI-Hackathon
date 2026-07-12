@@ -14,6 +14,18 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(tempfile.gettempdir()) / "sentinel_decompiled_cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+MAX_CACHE_FILES = 50
+
+
+def _evict_cache():
+    cached = sorted(CACHE_DIR.glob("*.zip"), key=lambda p: p.stat().st_mtime)
+    while len(cached) > MAX_CACHE_FILES:
+        oldest = cached.pop(0)
+        try:
+            oldest.unlink()
+            logger.info("Evicted cache file: %s", oldest.name)
+        except OSError:
+            pass
 
 
 def get_cached_zip(apk_id: str, tool: str, minio_path: str) -> Path:
@@ -30,6 +42,7 @@ def get_cached_zip(apk_id: str, tool: str, minio_path: str) -> Path:
             zip_bytes = download_apk(object_name)
             with open(cache_file, "wb") as f:
                 f.write(zip_bytes)
+            _evict_cache()
         except Exception as exc:
             logger.error("Failed to download zip %s: %s", object_name, exc)
             raise HTTPException(status_code=404, detail="Decompiled zip file not found in storage")

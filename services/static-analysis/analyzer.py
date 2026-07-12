@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ DANGEROUS_PERMISSIONS = {
 SUSPICIOUS_APIS = [
     "getDeviceId", "getSubscriberId", "getImei", "getSimSerialNumber",
     "sendTextMessage", "sendMultipartTextMessage",
-    "execCommand", "exec(", "Runtime.getRuntime",
+    "execCommand", "Runtime.getRuntime",
     "DexClassLoader", "PathClassLoader", "InMemoryDexClassLoader",
     "AccessibilityService", "performGlobalAction",
     "getInstalledPackages", "getInstalledApplications",
@@ -36,10 +36,13 @@ SUSPICIOUS_APIS = [
 ]
 
 
-def extract_permissions(apk_path: str) -> List[Dict]:
+def _parse_apk(apk_path: str) -> Tuple:
+    from androguard.misc import AnalyzeAPK
+    return AnalyzeAPK(apk_path)
+
+
+def extract_permissions(a) -> List[Dict]:
     try:
-        from androguard.misc import AnalyzeAPK
-        a, _, _ = AnalyzeAPK(apk_path)
         permissions = []
         for perm in a.get_permissions():
             short = perm.split(".")[-1]
@@ -54,10 +57,8 @@ def extract_permissions(apk_path: str) -> List[Dict]:
         return []
 
 
-def extract_manifest_info(apk_path: str) -> Dict:
+def extract_manifest_info(a) -> Dict:
     try:
-        from androguard.misc import AnalyzeAPK
-        a, _, _ = AnalyzeAPK(apk_path)
         return {
             "package_name": a.get_package(),
             "version_name": a.get_androidversion_name(),
@@ -73,11 +74,9 @@ def extract_manifest_info(apk_path: str) -> Dict:
         return {}
 
 
-def detect_suspicious_apis(apk_path: str) -> List[str]:
+def detect_suspicious_apis(dx) -> List[str]:
     found = set()
     try:
-        from androguard.misc import AnalyzeAPK
-        _, d, dx = AnalyzeAPK(apk_path)
         for method in dx.get_methods():
             src = str(method.get_method())
             for api in SUSPICIOUS_APIS:
@@ -88,10 +87,8 @@ def detect_suspicious_apis(apk_path: str) -> List[str]:
     return list(found)
 
 
-def check_obfuscation(apk_path: str) -> bool:
+def check_obfuscation(dx) -> bool:
     try:
-        from androguard.misc import AnalyzeAPK
-        _, _, dx = AnalyzeAPK(apk_path)
         short_names, total = 0, 0
         for cls in dx.get_classes():
             name = cls.get_vm_class().get_name().split("/")[-1].strip(";")
@@ -103,27 +100,23 @@ def check_obfuscation(apk_path: str) -> bool:
         return False
 
 
-def detect_dynamic_code_loading(apk_path: str) -> bool:
+def detect_dynamic_code_loading(dx) -> bool:
     loaders = {"DexClassLoader", "PathClassLoader", "InMemoryDexClassLoader"}
     try:
-        from androguard.misc import AnalyzeAPK
-        _, _, dx = AnalyzeAPK(apk_path)
-        for cls in dx.get_classes():
-            name = cls.get_vm_class().get_name()
-            if any(loader in name for loader in loaders):
+        for method in dx.get_methods():
+            method_str = str(method.get_method())
+            if any(loader in method_str for loader in loaders):
                 return True
     except Exception:
         pass
     return False
 
 
-def extract_strings(apk_path: str) -> Dict:
+def extract_strings(a, d) -> Dict:
     urls, ips = [], []
     url_re = re.compile(r'https?://[^\s"\'<>]{8,}')
     ip_re = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
     try:
-        from androguard.misc import AnalyzeAPK
-        a, d, _ = AnalyzeAPK(apk_path)
         for dex in d:
             for s in dex.get_strings():
                 text = str(s)
@@ -150,12 +143,25 @@ def run_yara_scan(apk_path: str, rules_dir: str) -> List[str]:
 
 
 def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
-    permissions = extract_permissions(apk_path)
-    manifest = extract_manifest_info(apk_path)
-    suspicious_apis = detect_suspicious_apis(apk_path)
-    obfuscated = check_obfuscation(apk_path)
-    dynamic_loading = detect_dynamic_code_loading(apk_path)
-    strings = extract_strings(apk_path)
+    try:
+        a, d, dx = _parse_apk(apk_path)
+    except Exception as exc:
+        logger.error("APK parsing failed: %s", exc)
+        return {
+            "permissions": [], "dangerous_permission_count": 0,
+            "manifest": {}, "suspicious_apis": [],
+            "obfuscation_detected": False, "dynamic_code_loading": False,
+            "hardcoded_urls": [], "hardcoded_ips": [],
+            "yara_matches": [], "risk_indicator_count": 0,
+            "iocs": {"domains": [], "ips": []},
+        }
+
+    permissions = extract_permissions(a)
+    manifest = extract_manifest_info(a)
+    suspicious_apis = detect_suspicious_apis(dx)
+    obfuscated = check_obfuscation(dx)
+    dynamic_loading = detect_dynamic_code_loading(dx)
+    strings = extract_strings(a, d)
     yara_matches = run_yara_scan(apk_path, rules_dir)
 
     dangerous = [p for p in permissions if p["dangerous"]]
@@ -185,20 +191,17 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
 
 def decompile_apk(apk_path: str, apk_id: str) -> tuple:
     results = {}
-    
-    # Create a base temp directory for this decompilation run
+
     temp_dir = Path(tempfile.mkdtemp(prefix=f"decompile_{apk_id}_"))
-    
+
     apktool_out = temp_dir / "apktool_out"
     jadx_out = temp_dir / "jadx_out"
-    
+
     apktool_out.mkdir(parents=True, exist_ok=True)
     jadx_out.mkdir(parents=True, exist_ok=True)
-    
+
     try:
-        # Run APKTool
         logger.info("Running APKTool for apk_id=%s", apk_id)
-        # java -jar /usr/local/bin/apktool.jar d apk_path -o apktool_out -f
         apktool_proc = subprocess.run(
             ["java", "-jar", "/usr/local/bin/apktool.jar", "d", apk_path, "-o", str(apktool_out), "-f"],
             capture_output=True,
@@ -209,16 +212,13 @@ def decompile_apk(apk_path: str, apk_id: str) -> tuple:
             logger.warning("APKTool failed for %s: %s", apk_id, apktool_proc.stderr)
         else:
             logger.info("APKTool finished successfully for apk_id=%s", apk_id)
-            # Create zip
             apktool_zip = shutil.make_archive(str(temp_dir / f"{apk_id}_apktool"), "zip", apktool_out)
             results["apktool_zip"] = apktool_zip
     except Exception as exc:
         logger.exception("Exception running APKTool for %s: %s", apk_id, exc)
 
     try:
-        # Run JADX
         logger.info("Running JADX for apk_id=%s", apk_id)
-        # jadx -d jadx_out apk_path --no-res
         jadx_proc = subprocess.run(
             ["jadx", "-d", str(jadx_out), apk_path, "--no-res"],
             capture_output=True,
@@ -229,10 +229,9 @@ def decompile_apk(apk_path: str, apk_id: str) -> tuple:
             logger.warning("JADX failed for %s: %s", apk_id, jadx_proc.stderr)
         else:
             logger.info("JADX finished successfully for apk_id=%s", apk_id)
-            # Create zip
             jadx_zip = shutil.make_archive(str(temp_dir / f"{apk_id}_jadx"), "zip", jadx_out)
             results["jadx_zip"] = jadx_zip
     except Exception as exc:
         logger.exception("Exception running JADX for %s: %s", apk_id, exc)
-        
+
     return results, temp_dir
