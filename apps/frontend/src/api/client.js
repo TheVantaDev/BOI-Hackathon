@@ -21,5 +21,7 @@ export const getAnalysisStatus = (apkId) => api.get(`/analysis/${apkId}/status`)
 export const getReport = (apkId) => api.get(`/reports/${apkId}`)
 export const getDashboardStats = () => api.get('/dashboard/stats')
 export const getRecentUploads = (limit = 20) => api.get(`/dashboard/recent?limit=${limit}`)
+export const getDecompiledTree = (apkId, tool, path = '') => api.get(`/analysis/${apkId}/decompiled/tree`, { params: { tool, path } })
+export const getDecompiledFile = (apkId, tool, path) => api.get(`/analysis/${apkId}/decompiled/file`, { params: { tool, path } })
 
 export default api

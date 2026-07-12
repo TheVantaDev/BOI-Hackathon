@@ -1,5 +1,8 @@
 import logging
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -178,3 +181,58 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
             "ips": strings["hardcoded_ips"],
         },
     }
+
+
+def decompile_apk(apk_path: str, apk_id: str) -> tuple:
+    results = {}
+    
+    # Create a base temp directory for this decompilation run
+    temp_dir = Path(tempfile.mkdtemp(prefix=f"decompile_{apk_id}_"))
+    
+    apktool_out = temp_dir / "apktool_out"
+    jadx_out = temp_dir / "jadx_out"
+    
+    apktool_out.mkdir(parents=True, exist_ok=True)
+    jadx_out.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # Run APKTool
+        logger.info("Running APKTool for apk_id=%s", apk_id)
+        # java -jar /usr/local/bin/apktool.jar d apk_path -o apktool_out -f
+        apktool_proc = subprocess.run(
+            ["java", "-jar", "/usr/local/bin/apktool.jar", "d", apk_path, "-o", str(apktool_out), "-f"],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if apktool_proc.returncode != 0:
+            logger.warning("APKTool failed for %s: %s", apk_id, apktool_proc.stderr)
+        else:
+            logger.info("APKTool finished successfully for apk_id=%s", apk_id)
+            # Create zip
+            apktool_zip = shutil.make_archive(str(temp_dir / f"{apk_id}_apktool"), "zip", apktool_out)
+            results["apktool_zip"] = apktool_zip
+    except Exception as exc:
+        logger.exception("Exception running APKTool for %s: %s", apk_id, exc)
+
+    try:
+        # Run JADX
+        logger.info("Running JADX for apk_id=%s", apk_id)
+        # jadx -d jadx_out apk_path --no-res
+        jadx_proc = subprocess.run(
+            ["jadx", "-d", str(jadx_out), apk_path, "--no-res"],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if jadx_proc.returncode != 0:
+            logger.warning("JADX failed for %s: %s", apk_id, jadx_proc.stderr)
+        else:
+            logger.info("JADX finished successfully for apk_id=%s", apk_id)
+            # Create zip
+            jadx_zip = shutil.make_archive(str(temp_dir / f"{apk_id}_jadx"), "zip", jadx_out)
+            results["jadx_zip"] = jadx_zip
+    except Exception as exc:
+        logger.exception("Exception running JADX for %s: %s", apk_id, exc)
+        
+    return results, temp_dir

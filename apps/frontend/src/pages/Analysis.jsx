@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Shield, AlertTriangle, Wifi, Lock, Code2, FileWarning,
-  ChevronLeft, ExternalLink, Info, Bug, Activity
+  ChevronLeft, ExternalLink, Info, Bug, Activity,
+  Folder, FolderOpen, FileCode, ChevronRight, ChevronDown, Loader2
 } from 'lucide-react'
 import RiskScoreCard from '../components/RiskScoreCard'
 import AttackChainGraph from '../components/AttackChainGraph'
-import { getAnalysis, getReport } from '../api/client'
+import { getAnalysis, getReport, getDecompiledTree, getDecompiledFile } from '../api/client'
 
 const MOCK_ANALYSIS = {
   filename: 'fake_hdfc_app.apk',
@@ -68,7 +69,7 @@ const MOCK_REPORT = {
   ],
 }
 
-const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report']
+const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Decompiled Source']
 
 function PermBadge({ dangerous }) {
   return (
@@ -105,6 +106,272 @@ function MitreBadge({ id, name, tactic }) {
       <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{name}</div>
     </div>
   )
+}
+
+function TreeNode({ node, expandedDirs, dirContents, onToggleDir, onSelectFile, selectedFile }) {
+  const isDir = node.type === 'directory';
+  const isExpanded = !!expandedDirs[node.path];
+  const children = dirContents[node.path] || [];
+  const isSelected = selectedFile === node.path;
+  const [isHovered, setIsHovered] = useState(false);
+  
+  const handleItemClick = () => {
+    if (isDir) {
+      onToggleDir(node.path);
+    } else {
+      onSelectFile(node.path, node.name);
+    }
+  };
+
+  return (
+    <div style={{ marginLeft: 8 }}>
+      <div
+        onClick={handleItemClick}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 8px',
+          borderRadius: 6,
+          cursor: 'pointer',
+          fontSize: 12,
+          color: isSelected ? 'var(--cyan)' : (isHovered ? 'var(--text-1)' : 'var(--text-2)'),
+          background: isSelected ? 'rgba(6, 182, 212, 0.1)' : (isHovered ? 'rgba(30, 45, 74, 0.3)' : 'transparent'),
+          transition: 'all 0.15s ease',
+          userSelect: 'none',
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {isDir ? (
+          <>
+            <span style={{ color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
+            <span style={{ color: isExpanded ? 'var(--cyan)' : 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+              {isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+            </span>
+          </>
+        ) : (
+          <>
+            <span style={{ width: 14 }} />
+            <span style={{ color: isSelected ? 'var(--cyan)' : 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+              <FileCode size={14} />
+            </span>
+          </>
+        )}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {node.name}
+        </span>
+      </div>
+      
+      {isDir && isExpanded && (
+        <div style={{ borderLeft: '1px solid var(--border)', marginLeft: 15, paddingLeft: 4 }}>
+          {children.length === 0 ? (
+            <div style={{ padding: '4px 20px', fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic' }}>
+              Empty
+            </div>
+          ) : (
+            children.map((childNode) => (
+              <TreeNode
+                key={childNode.path}
+                node={childNode}
+                expandedDirs={expandedDirs}
+                dirContents={dirContents}
+                onToggleDir={onToggleDir}
+                onSelectFile={onSelectFile}
+                selectedFile={selectedFile}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CodeViewer({ content, filename }) {
+  if (!content) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-3)', fontSize: 13 }}>
+        Select a file from the explorer to view its contents
+      </div>
+    )
+  }
+
+  const lines = content.split('\n');
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div style={{ padding: '10px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 600, color: 'var(--cyan)', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <FileCode size={14} />
+        {filename}
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', background: '#090d16', fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, padding: '12px 0' }}>
+        <div style={{ color: 'var(--text-3)', textAlign: 'right', paddingRight: 12, paddingLeft: 8, borderRight: '1px solid var(--border)', userSelect: 'none', minWidth: 45, background: '#090d16' }}>
+          {lines.map((_, i) => (
+            <div key={i} style={{ height: 20 }}>{i + 1}</div>
+          ))}
+        </div>
+        <pre style={{ margin: 0, paddingLeft: 12, color: '#e2e8f0', flex: 1, whiteSpace: 'pre', overflowX: 'auto', background: '#090d16' }}>
+          {lines.map((line, i) => (
+            <div key={i} style={{ height: 20 }}>{line || ' '}</div>
+          ))}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+function DecompiledView({ apkId }) {
+  const [tool, setTool] = useState('jadx');
+  const [tree, setTree] = useState([]);
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [expandedDirs, setExpandedDirs] = useState({});
+  const [dirContents, setDirContents] = useState({});
+  
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFileName, setSelectedFileName] = useState('');
+  const [fileContent, setFileContent] = useState(null);
+  const [loadingFile, setLoadingFile] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  useEffect(() => {
+    setTree([]);
+    setExpandedDirs({});
+    setDirContents({});
+    setSelectedFile(null);
+    setSelectedFileName('');
+    setFileContent(null);
+    setErrorMsg(null);
+    
+    setLoadingTree(true);
+    getDecompiledTree(apkId, tool, '')
+      .then(resp => {
+        setTree(resp.data.tree);
+        setLoadingTree(false);
+      })
+      .catch(err => {
+        console.error("Failed to load root tree:", err);
+        setErrorMsg("Failed to load decompiled files. Make sure this APK is decompiled.");
+        setTree([]);
+        setLoadingTree(false);
+      });
+  }, [apkId, tool]);
+
+  const handleToggleDir = async (path) => {
+    const isExpanded = !!expandedDirs[path];
+    if (!isExpanded && !dirContents[path]) {
+      try {
+        const resp = await getDecompiledTree(apkId, tool, path);
+        setDirContents(prev => ({ ...prev, [path]: resp.data.tree }));
+      } catch (err) {
+        console.error("Failed to load folder contents:", err);
+      }
+    }
+    setExpandedDirs(prev => ({ ...prev, [path]: !isExpanded }));
+  };
+
+  const handleSelectFile = async (path, name) => {
+    setSelectedFile(path);
+    setSelectedFileName(name);
+    setLoadingFile(true);
+    setFileContent(null);
+    try {
+      const resp = await getDecompiledFile(apkId, tool, path);
+      setFileContent(resp.data.content);
+      setLoadingFile(false);
+    } catch (err) {
+      console.error("Failed to load file contents:", err);
+      setFileContent("Error: Failed to load file contents.");
+      setLoadingFile(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16, height: 'calc(100vh - 280px)', minHeight: 500 }}>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: 16, borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>File Explorer</div>
+          <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+            <button
+              onClick={() => setTool('jadx')}
+              style={{
+                flex: 1,
+                padding: '6px 0',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+                background: tool === 'jadx' ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
+                color: tool === 'jadx' ? 'var(--cyan)' : 'var(--text-2)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              JADX (Java)
+            </button>
+            <button
+              onClick={() => setTool('apktool')}
+              style={{
+                flex: 1,
+                padding: '6px 0',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+                background: tool === 'apktool' ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
+                color: tool === 'apktool' ? 'var(--cyan)' : 'var(--text-2)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              APKTool (Res/Smali)
+            </button>
+          </div>
+        </div>
+        
+        <div style={{ flex: 1, overflow: 'auto', padding: '12px 6px' }}>
+          {loadingTree ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8, color: 'var(--text-3)' }}>
+              <Loader2 size={16} className="animate-spin" /> Loading files...
+            </div>
+          ) : errorMsg ? (
+            <div style={{ padding: 16, fontSize: 12, color: 'var(--red)', textAlign: 'center' }}>
+              {errorMsg}
+            </div>
+          ) : tree.length === 0 ? (
+            <div style={{ padding: 16, fontSize: 12, color: 'var(--text-3)', textAlign: 'center' }}>
+              No files decompiled.
+            </div>
+          ) : (
+            tree.map(node => (
+              <TreeNode
+                key={node.path}
+                node={node}
+                expandedDirs={expandedDirs}
+                dirContents={dirContents}
+                onToggleDir={handleToggleDir}
+                onSelectFile={handleSelectFile}
+                selectedFile={selectedFile}
+              />
+            ))
+          )}
+        </div>
+      </div>
+      
+      <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {loadingFile ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, color: 'var(--text-3)' }}>
+            <Loader2 size={24} className="animate-spin" color="var(--cyan)" />
+            <span>Retrieving source code...</span>
+          </div>
+        ) : (
+          <CodeViewer content={fileContent} filename={selectedFileName} />
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Analysis() {
@@ -391,6 +658,12 @@ export default function Analysis() {
             >
               {analysis?.ai_summary}
             </div>
+          </div>
+        )}
+
+        {tab === 5 && (
+          <div className="animate-fade-in">
+            <DecompiledView apkId={id} />
           </div>
         )}
       </div>
