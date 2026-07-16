@@ -105,12 +105,32 @@ services:
       minio:
         condition: service_healthy
 
+  mobsf:
+    image: opensecurity/mobile-security-framework-mobsf:latest
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+    environment:
+      MOBSF_API_KEY: ${MOBSF_API_KEY:-sentinel_mobsf_key}
+    volumes:
+      - mobsf_data:/home/mobsf/.MobSF
+
   dynamic-analysis:
     build:
       context: ../services/dynamic-analysis
     restart: unless-stopped
     ports:
       - "8011:8011"
+    environment:
+      MOBSF_URL: http://mobsf:8008
+      MOBSF_API_KEY: ${MOBSF_API_KEY:-sentinel_mobsf_key}
+      MOBSF_TIMEOUT: "300"
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: sentinel_minio
+      MINIO_SECRET_KEY: sentinel_minio_pass
+    depends_on:
+      - mobsf
+      - minio
 
   threat-intel:
     build:
@@ -174,3 +194,4 @@ volumes:
   minio_data:
   chroma_data:
   ollama_data:
+  mobsf_data:

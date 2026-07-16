@@ -20,30 +20,20 @@ async def analyze(ref: APKRef):
     try:
         result = await run_dynamic_analysis(ref.apk_id, ref.minio_path)
         return result
+    except RuntimeError as exc:
+        logger.warning("Dynamic analysis skipped: %s", exc)
+        return {"apk_id": ref.apk_id, "source": "unavailable", "skipped": True,
+                "reason": str(exc), "network_requests": [], "sms_intercepted": False,
+                "accessibility_abuse": False, "file_writes": [], "background_services": [],
+                "runtime_downloads": [], "contacts_accessed": False,
+                "microphone_accessed": False, "camera_accessed": False}
     except Exception as exc:
         logger.exception("Dynamic analysis failed for %s: %s", ref.apk_id, exc)
-        return _stub_result(ref.apk_id)
-
-
-def _stub_result(apk_id: str) -> dict:
-    return {
-        "apk_id": apk_id,
-        "network_requests": [
-            {"url": "http://185.220.101.45/c2/checkin", "method": "POST", "suspicious": True, "bytes_sent": 1024},
-            {"url": "https://api.ipify.org", "method": "GET", "suspicious": False, "bytes_sent": 0},
-        ],
-        "sms_intercepted": True,
-        "sms_content_samples": ["OTP for your SBI transaction is 847291"],
-        "accessibility_abuse": True,
-        "accessibility_actions": ["performClick", "setText", "getWindows"],
-        "file_writes": ["/data/data/com.unknown/files/creds.db"],
-        "background_services": ["OTPHarvesterService", "KeyloggerService"],
-        "runtime_downloads": ["http://185.220.101.45/payload_v2.dex"],
-        "contacts_accessed": True,
-        "microphone_accessed": False,
-        "camera_accessed": False,
-        "sandbox_duration_seconds": 120,
-    }
+        return {"apk_id": ref.apk_id, "source": "error", "error": str(exc),
+                "network_requests": [], "sms_intercepted": False,
+                "accessibility_abuse": False, "file_writes": [], "background_services": [],
+                "runtime_downloads": [], "contacts_accessed": False,
+                "microphone_accessed": False, "camera_accessed": False}
 
 
 @app.get("/health")

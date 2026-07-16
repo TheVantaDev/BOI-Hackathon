@@ -5,68 +5,16 @@ import {
   ChevronLeft, ExternalLink, Info, Bug, Activity,
   Folder, FolderOpen, FileCode, ChevronRight, ChevronDown, Loader2
 } from 'lucide-react'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import RiskScoreCard from '../components/RiskScoreCard'
 import AttackChainGraph from '../components/AttackChainGraph'
 import { getAnalysis, getReport, getDecompiledTree, getDecompiledFile } from '../api/client'
 
-const MOCK_ANALYSIS = {
-  filename: 'fake_hdfc_app.apk',
-  sha256: 'a3f8c2d1e9b04756f2e1a8c3d4b5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3',
-  status: 'completed',
-  static_analysis: {
-    permissions: [
-      { name: 'READ_SMS', dangerous: true, description: 'Read SMS messages' },
-      { name: 'RECEIVE_SMS', dangerous: true, description: 'Receive SMS messages' },
-      { name: 'BIND_ACCESSIBILITY_SERVICE', dangerous: true, description: 'Accessibility service abuse' },
-      { name: 'INTERNET', dangerous: false, description: 'Network access' },
-      { name: 'READ_CONTACTS', dangerous: true, description: 'Access contact list' },
-      { name: 'RECORD_AUDIO', dangerous: true, description: 'Microphone access' },
-    ],
-    suspicious_apis: ['getDeviceId', 'getSubscriberId', 'sendTextMessage', 'execCommand'],
-    obfuscation_detected: true,
-    dynamic_code_loading: true,
-    hardcoded_urls: ['http://185.220.101.45/c2/', 'http://malware-c2.xyz/upload'],
-    yara_matches: ['BankingTrojan.Android', 'SMSInterceptor.Generic'],
-  },
-  dynamic_analysis: {
-    network_requests: [
-      { url: 'http://185.220.101.45/c2/checkin', method: 'POST', suspicious: true },
-      { url: 'https://api.ipify.org', method: 'GET', suspicious: false },
-    ],
-    sms_intercepted: true,
-    accessibility_abuse: true,
-    file_writes: ['/data/data/com.fake.hdfc/files/stolen_creds.db'],
-    background_services: ['OTPHarvesterService', 'ContactSyncService'],
-  },
-  threat_intel: {
-    malicious_domains: ['malware-c2.xyz'],
-    malicious_ips: ['185.220.101.45'],
-    mitre_techniques: [
-      { id: 'T1430', name: 'Location Tracking', tactic: 'Collection' },
-      { id: 'T1412', name: 'Capture SMS Messages', tactic: 'Collection' },
-      { id: 'T1417', name: 'Input Capture', tactic: 'Collection' },
-      { id: 'T1544', name: 'Ingress Tool Transfer', tactic: 'Command and Control' },
-    ],
-  },
-  ai_summary: `This application exhibits behavior consistent with an advanced banking trojan targeting Indian financial institutions. The APK impersonates HDFC Bank's official application and employs multiple sophisticated attack vectors.\n\nKey findings:\n• SMS interception via BroadcastReceiver captures OTPs from banking applications\n• Accessibility service abuse enables overlay attacks on legitimate banking apps to steal credentials\n• Dynamic code loading from remote C2 server (185.220.101.45) allows post-infection capability updates\n• Extensive obfuscation using ProGuard with custom string encryption makes static detection difficult\n\nThe application likely targets account takeover through credential harvesting combined with OTP interception, enabling unauthorized fund transfers without victim awareness.`,
-}
-
-const MOCK_REPORT = {
-  risk_score: 92,
-  severity: 'Highly Malicious',
-  classification: 'Banking Trojan',
-  fraud_intent: 'Account Takeover via OTP Interception',
-  fraud_journey: {
-    nodes: [],
-    edges: [],
-  },
-  recommendations: [
-    'Immediately block domains: malware-c2.xyz and IPs: 185.220.101.45',
-    'Alert affected customers who may have installed this application',
-    'Report to CERT-In under IT Act Section 70B',
-    'Coordinate with Google Play Protect for broader detection coverage',
-    'Update threat signatures across endpoint security tools',
-  ],
+function getLanguageFromFilename(filename) {
+  const ext = filename?.split('.').pop()?.toLowerCase()
+  const map = { java: 'java', xml: 'xml', smali: 'smali', kt: 'kotlin', json: 'json', yml: 'yaml', yaml: 'yaml', properties: 'properties' }
+  return map[ext] || 'text'
 }
 
 const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Decompiled Source']
@@ -199,25 +147,38 @@ function CodeViewer({ content, filename }) {
     )
   }
 
-  const lines = content.split('\n');
+  const language = getLanguageFromFilename(filename);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{ padding: '10px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 600, color: 'var(--cyan)', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 8 }}>
         <FileCode size={14} />
         {filename}
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' }}>{language}</span>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', display: 'flex', background: '#090d16', fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, padding: '12px 0' }}>
-        <div style={{ color: 'var(--text-3)', textAlign: 'right', paddingRight: 12, paddingLeft: 8, borderRight: '1px solid var(--border)', userSelect: 'none', minWidth: 45, background: '#090d16' }}>
-          {lines.map((_, i) => (
-            <div key={i} style={{ height: 20 }}>{i + 1}</div>
-          ))}
-        </div>
-        <pre style={{ margin: 0, paddingLeft: 12, color: '#e2e8f0', flex: 1, whiteSpace: 'pre', overflowX: 'auto', background: '#090d16' }}>
-          {lines.map((line, i) => (
-            <div key={i} style={{ height: 20 }}>{line || ' '}</div>
-          ))}
-        </pre>
+      <div style={{ flex: 1, overflow: 'auto', background: '#090d16' }}>
+        <SyntaxHighlighter
+          language={language}
+          style={vscDarkPlus}
+          showLineNumbers
+          wrapLongLines={false}
+          customStyle={{
+            margin: 0,
+            padding: '12px 0',
+            background: '#090d16',
+            fontSize: 12,
+            lineHeight: 1.6,
+            minHeight: '100%',
+          }}
+          lineNumberStyle={{
+            minWidth: 45,
+            paddingRight: 12,
+            color: 'rgba(148,163,184,0.4)',
+            userSelect: 'none',
+          }}
+        >
+          {content}
+        </SyntaxHighlighter>
       </div>
     </div>
   )
@@ -378,22 +339,55 @@ export default function Analysis() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [tab, setTab] = useState(0)
-  const [analysis, setAnalysis] = useState(MOCK_ANALYSIS)
-  const [report, setReport] = useState(MOCK_REPORT)
+  const [analysis, setAnalysis] = useState(null)
+  const [report, setReport] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     if (!id) return
+    setLoading(true)
+    setError(null)
     Promise.all([getAnalysis(id), getReport(id)])
       .then(([a, r]) => {
         setAnalysis(a.data)
         setReport(r.data)
       })
-      .catch(() => {})
+      .catch(() => {
+        setError('Failed to load analysis. Make sure the backend is running and this analysis exists.')
+      })
+      .finally(() => setLoading(false))
   }, [id])
 
   const sa = analysis?.static_analysis || {}
   const da = analysis?.dynamic_analysis || {}
   const ti = analysis?.threat_intel || {}
+
+  if (loading) {
+    return (
+      <div style={{ padding: '28px 32px', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <Loader2 size={32} className="animate-spin" color="var(--cyan)" />
+        <span style={{ fontSize: 14, color: 'var(--text-2)' }}>Loading analysis...</span>
+      </div>
+    )
+  }
+
+  if (error || !analysis) {
+    return (
+      <div style={{ padding: '28px 32px', minHeight: '100vh' }}>
+        <button onClick={() => navigate(-1)} className="btn-secondary" style={{ marginBottom: 24, fontSize: 12 }}>
+          <ChevronLeft size={14} /> Back
+        </button>
+        <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+          <AlertTriangle size={36} color="var(--text-3)" style={{ marginBottom: 16 }} />
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>Analysis Not Found</div>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 400, margin: '0 auto', lineHeight: 1.6 }}>
+            {error || 'No analysis data available for this ID. Upload an APK to get started.'}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '28px 32px', minHeight: '100vh' }}>
