@@ -1,0 +1,120 @@
+MITRE ATT&CK for Mobile - Indian Banking Sector Specific Techniques and Context
+Source: MITRE ATT&CK + India-specific threat intelligence synthesis
+Curated for: Bank of India Sentinel Platform
+
+===========================================================================
+INDIA-SPECIFIC ANDROID BANKING THREAT LANDSCAPE
+===========================================================================
+
+India's digital payment ecosystem (UPI, IMPS, NEFT via mobile banking) makes it a uniquely high-value target. The following technical patterns have been documented across multiple campaigns targeting Indian financial institutions specifically:
+
+TARGET APPLICATION PACKAGE NAMES (commonly hardcoded in Indian banking trojans):
+- com.sbi.SBIFreedomPlus (SBI YONO)
+- com.sbi.lotusintouch
+- com.sbi.SBIMobileBanking
+- net.one97.paytm (Paytm)
+- in.org.npci.upiapp (BHIM UPI)
+- com.phonepe.app (PhonePe)
+- com.google.android.apps.nbu.paisa.user (Google Pay)
+- com.amazon.mShop.android.shopping (Amazon Pay)
+- com.hdfc.mobilebanking
+- com.hdfcbank.hdfcmobile
+- com.axis.mobile (Axis Mobile)
+- com.bankofbaroda.mobilebanking
+- com.idbi.mPassbook
+- com.icici.ipayapp (iMobile Pay)
+- com.kotak.mobilebanking
+- com.pnb.mobilebanking
+- com.csb.mobilebanking
+- com.indus.mobilebanking
+- com.yesbank.mobilebanking
+- com.federal.mfederal
+- com.cub.customerapp
+- com.iob.mobilebanking
+- com.canara.mobilebanking
+- com.ubi.UBIMobile
+
+UPI-SPECIFIC ATTACK VECTORS:
+UPI (Unified Payments Interface) introduced unique attack surface. Trojans target UPI flows by:
+1. Overlay attacks on BHIM UPI, Google Pay, PhonePe, Paytm during UPI PIN entry - the PIN is a 4-6 digit code entered on-screen, capturable via accessibility services reading EditText field content.
+2. Intercepting SMS OTPs for UPI transaction confirmation (many banks send SMS OTP for high-value UPI transfers).
+3. Generating fraudulent collect requests (UPI pull transactions) - malware reads victim's UPI ID then sends collect requests from attacker-controlled VPA.
+4. Screen capture during net-banking session to capture VPA, account number, IFSC.
+
+SMISHING LURES OBSERVED IN INDIA (documented in public threat reports):
+- "Your SBI account is temporarily blocked. Update KYC immediately: [link]"
+- "Dear customer, your PAN card is expiring. Link PAN to Aadhaar now: [link]"
+- "YONO SBI: A login attempt was detected from a new device. Verify now: [link]"
+- "Income Tax Dept: Your refund of Rs. 18,450 is pending. Click to claim: [link]"
+- "Your HDFC account will be suspended in 24 hours. Complete verification: [link]"
+- "FASTag balance low. Recharge now to avoid penalty: [link to fake portal]"
+- "Your parcel could not be delivered. Reschedule here: [link]" (FluBot-style)
+- "CIBIL alert: Your credit score dropped. Check report: [link]"
+- "Register for PM Kisan scheme: [link to APK download]"
+- "IRCTC refund processing. Install app for faster refund: [link]"
+
+CERTIFICATE OBSERVATIONS:
+Indian banking trojans frequently:
+- Use self-signed certificates with CN=Android Debug, OU=Android, O=Unknown, making debug certificates a red flag
+- Reuse certificates across multiple malicious APK variants (certificate clustering as IOC)
+- Spoof legitimate app certificate metadata (CN=State Bank of India) while using a different signing key
+- Have signing certificates with validity periods starting after the first submission date (retroactively backdated)
+
+INDIA-SPECIFIC C2 INFRASTRUCTURE PATTERNS:
+- Use of .xyz, .ru, .tk, .shop domains registered within 30 days of campaign launch
+- Hosting on bulletproof providers in Netherlands, Romania, Russia frequently seen
+- C2 traffic mimicking legitimate CDN domains (subdomains resembling Cloudflare, Akamai)
+- Use of Telegram bot API as a C2 channel (HTTPS, legitimate domain, hard to block)
+- Dynamic DNS (no-ip.com, duckdns.org) for C2 to evade domain reputation blocking
+
+===========================================================================
+T1627 - Execution Guardrails (India-Specific Implementation)
+===========================================================================
+Some sophisticated Indian-targeting trojans implement execution guardrails to avoid executing on non-Indian devices, complicating sandbox analysis:
+- Check SIM MCC/MNC for India (404, 405 MCC codes)
+- Check device locale (en_IN, hi_IN, ta_IN, etc.)
+- Check installed app list for Indian banking apps before activating malicious behavior
+- Refuse to execute if running in an emulator (detect emulator via Build.HARDWARE, /proc/cpuinfo checks, or timing-based anti-emulation)
+Detection implication: If an APK passes all other static indicators but shows emulator/locale checks in its decompiled code, treat as high confidence evasive malware.
+
+===========================================================================
+T1523 - Evade Analysis Environment
+===========================================================================
+Common emulator detection methods used by Indian banking trojans (relevant to sandbox evasion):
+- Check Build.FINGERPRINT for "generic", "unknown", "emulator", "sdk" strings
+- Check Build.MODEL for "Android SDK built for x86", "Genymotion", "Emulator"
+- Check Build.HARDWARE for "goldfish" (standard Android emulator hardware model)
+- Check /proc/cpuinfo for "QEMU" string
+- Check for presence of common sandbox packages: com.google.android.launcher.layouts.genymotion, com.bluestacks, com.bignox.app
+- Timing checks: certain operations (file I/O, network) run anomalously fast in emulators
+- Check if telephony returns null IMEI (emulators often return null or 000000000000000)
+If an APK implements multiple emulator detection methods, it is highly likely to be evasive malware designed to defeat automated sandbox analysis.
+
+===========================================================================
+ANDROID PERMISSIONS RISK MATRIX FOR INDIAN BANKING CONTEXT
+===========================================================================
+CRITICAL RISK (combination indicates banking trojan with high confidence):
+- READ_SMS + BIND_ACCESSIBILITY_SERVICE = OTP interception + overlay attack capability
+- SEND_SMS + READ_CONTACTS = self-propagating trojan via smishing
+- BIND_ACCESSIBILITY_SERVICE + SYSTEM_ALERT_WINDOW = overlay attack primary pattern
+- REQUEST_INSTALL_PACKAGES + DexClassLoader = dropper/loader pattern
+
+HIGH RISK (each individually):
+- BIND_DEVICE_ADMIN: prevents uninstall, can factory reset device
+- SYSTEM_ALERT_WINDOW: display overlay over other apps (required for overlay attacks)
+- PACKAGE_USAGE_STATS: monitor which banking apps the user opens (trigger timing for overlay)
+- RECEIVE_BOOT_COMPLETED: persist across device reboots
+- PROCESS_OUTGOING_CALLS: intercept calls (used for call-forward fraud)
+
+MEDIUM RISK (context-dependent):
+- READ_EXTERNAL_STORAGE + WRITE_EXTERNAL_STORAGE: data theft / payload storage
+- GET_ACCOUNTS: enumerate bank/Google accounts linked to device
+- USE_CREDENTIALS: access stored credentials
+- CAMERA: screenshot/photo of screen or physical card
+- RECORD_AUDIO: eavesdrop on verbal PINs or phone banking calls
+
+LOW RISK (individually, high risk in combination):
+- INTERNET: required but universal
+- ACCESS_NETWORK_STATE: required but universal
+- WAKE_LOCK: suspicious in non-media apps if persistent
+- FOREGROUND_SERVICE: used to keep malicious service running in background

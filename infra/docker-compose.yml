@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
 
   postgres:
@@ -112,8 +110,13 @@ services:
       - "8008:8008"
     environment:
       MOBSF_API_KEY: ${MOBSF_API_KEY:-sentinel_mobsf_key}
+      # ADB connection to host-side Android emulator (AVD running on Windows host)
+      # Start your AVD in Android Studio then run: adb tcpip 5555
+      MOBSF_ANALYZER_IDENTIFIER: ${ANDROID_EMULATOR_HOST:-host.docker.internal}:${ANDROID_EMULATOR_PORT:-5555}
     volumes:
       - mobsf_data:/home/mobsf/.MobSF
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   dynamic-analysis:
     build:
@@ -128,6 +131,9 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: sentinel_minio
       MINIO_SECRET_KEY: sentinel_minio_pass
+      FRIDA_SCRIPTS_DIR: /app/frida_scripts
+    volumes:
+      - ../services/dynamic-analysis/frida_scripts:/app/frida_scripts:ro
     depends_on:
       - mobsf
       - minio

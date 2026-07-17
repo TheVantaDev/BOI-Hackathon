@@ -1,0 +1,140 @@
+CAPEC - Android Fraud Techniques: Social Engineering and Evasion Patterns
+Source: CAPEC database + Android security research synthesis
+Curated for: Bank of India Sentinel Platform
+
+===========================================================================
+CAPEC-163: Spear Phishing
+===========================================================================
+Description: Targeted phishing using personalized information about the victim to increase credibility.
+
+Mobile banking context:
+Spear phishing in the banking context targets high-value customers using leaked personal data:
+- Data from previous bank breaches (name, partial account number, registered phone)
+- Data from telecom operator breaches (phone number + name + address)
+- Social media information (publicly visible employer, location, financial interests)
+
+Personalized smishing example:
+"Dear [Name], your SBI account ending in [last 4 digits] has an unresolved KYC issue. Complete verification to avoid service interruption: [link]"
+The inclusion of the victim's name and partial account number dramatically increases the SMS open and click rate.
+
+APK analysis relevance:
+- Spear phishing APKs may be tightly targeted; the small distribution makes threat intel feed matching less reliable
+- IOC-based detection may miss these; behavioral analysis is more reliable
+- Certificate analysis may show a unique per-campaign certificate (evidence of targeted attack)
+
+===========================================================================
+CAPEC-407: Pretexting
+===========================================================================
+Description: Adversary creates a fabricated scenario (pretext) to manipulate a victim into taking an action.
+
+Common pretexts in Indian banking fraud:
+1. "KYC non-compliance" — exploits mandatory RBI KYC requirements; creates urgency
+2. "Account blocked for suspicious activity" — exploits fear of financial loss
+3. "Income tax refund pending" — exploits expectation of money
+4. "Aadhaar-PAN linking mandatory" — exploits government mandate deadlines
+5. "UPI fraud alert from bank" — ironic; malware disguised as anti-fraud tool
+6. "Congratulations! You won [prize]" — lottery/prize fraud to get APK installed
+
+Technical implementation:
+- Fake notification pages (HTML/WebView) displayed within the malicious APK mimicking bank portals
+- Fake error messages using Indian bank logos and branding
+- Countdown timers ("Account will be blocked in 2 hours") to prevent victim deliberation
+
+===========================================================================
+CAPEC-89: Pharming
+===========================================================================
+Description: Adversary redirects legitimate network traffic to a malicious destination.
+
+Mobile implementation:
+- DNS hijacking: malware modifies Android's network settings to use rogue DNS resolver that returns attacker-controlled IPs for banking domains
+- Hosts file modification: modifies /etc/hosts (requires root) to redirect bank domains
+- VPN abuse: installs malicious VPN profile that routes banking traffic through attacker's proxy
+- Man-in-the-Browser: injects JavaScript into banking app's WebView to modify content or exfiltrate data
+
+Detection indicators:
+- CHANGE_NETWORK_STATE permission + VpnService usage in non-VPN apps
+- Root detection: if APK checks for root and has the above permissions, suspect privilege escalation attempt
+- Hosts file modification: only possible with root — combine with root exploit indicators
+
+===========================================================================
+CAPEC-122: Privilege Abuse
+===========================================================================
+Description: Adversary abuses elevated privileges granted to a legitimate user or process.
+
+Android Accessibility Service privilege abuse:
+The Accessibility Service is granted elevated OS-level privileges to assist users with disabilities. Banking trojans abuse this "legitimate" privilege grant to:
+- Read all on-screen content (including other apps' sensitive data)
+- Perform any user action on behalf of the user without explicit per-action consent
+- Prevent their own uninstallation by clicking "Cancel" on uninstall dialogs
+- Grant themselves additional permissions by clicking "Allow" on permission dialogs
+
+Device Administrator privilege abuse:
+Android Device Administration API was designed for enterprise MDM solutions. Malware abuses it:
+- Preventing uninstall (device admin cannot be uninstalled without revoking admin rights first)
+- Locking the device (useful for ransomware or to prevent victim from seeing fraud alerts)
+- Wiping the device (BRATA-style post-fraud self-destruct)
+
+===========================================================================
+CAPEC-148: Content Spoofing
+===========================================================================
+Description: Adversary injects or substitutes content to deceive the victim.
+
+Overlay content spoofing:
+- Visual content of banking app is covered by a pixel-perfect HTML/WebView overlay
+- Overlay may be transparent except for the input fields (user sees real app except where they type)
+- Or full-screen overlay showing complete fake bank login interface
+- Notification content spoofing: malware generates fake notifications with bank logo and text
+
+UPI QR code spoofing:
+- Malware modifies QR codes displayed on merchant payment screens by capturing and replacing the QR image
+- Or intercepts QR camera capture and substitutes attacker's VPA in the decoded QR data
+- Victim scans what appears to be a legitimate QR but pays attacker
+
+===========================================================================
+CAPEC FRAUD LIFECYCLE MAPPING TO ANDROID BANKING TROJANS
+===========================================================================
+
+Phase 1 - Reconnaissance:
+CAPEC-169 (Footprinting), CAPEC-191 (Read Sensitive Constants Within Android App)
+→ Attacker analyzes target banks, identifies vulnerable customer segments, studies app interfaces
+→ APK indicators: presence of target banking package names in code suggests reconnaissance data incorporated
+
+Phase 2 - Weaponization:
+CAPEC-93 (Log Injection), CAPEC-550 (Install New Service)
+→ Banking trojan APK developed with overlay templates, SMS interceptor, C2 infrastructure
+→ APK indicators: obfuscated code, encrypted C2 URLs, multiple dangerous permissions
+
+Phase 3 - Delivery:
+CAPEC-98 (Phishing), CAPEC-164 (Mobile Phishing)
+→ APK delivered via smishing, fraudulent website, social media, or fake app store page
+→ Context: app not from official Play Store, no developer history, suspicious signing certificate
+
+Phase 4 - Installation:
+CAPEC-540 (Overwrite Files to Cause Application Malfunction)
+→ Victim installs APK, grants permissions (Accessibility, SMS), malware establishes persistence
+→ APK indicators: RECEIVE_BOOT_COMPLETED for persistence, BIND_ACCESSIBILITY_SERVICE
+
+Phase 5 - C2 Establishment:
+CAPEC-697 (DHCP Spoofing), CAPEC-606 (Weakening of Cellular Encryption)
+→ Malware checks in with C2, downloads target configuration and overlay templates
+→ Network indicators: initial HTTP POST to C2 with device info
+
+Phase 6 - Credential Theft:
+CAPEC-98 (Phishing/Overlay), CAPEC-151 (Identity Spoofing)
+→ Overlay displayed on banking app launch, credentials captured
+→ Network indicators: POST with captured credentials to C2
+
+Phase 7 - OTP Bypass:
+CAPEC-115 (Authentication Bypass), CAPEC-196 (Session Credential Falsification)
+→ SMS OTP intercepted and forwarded to C2 before victim sees it
+→ SMS indicators: READ_SMS + near-simultaneous network POST after SMS receipt
+
+Phase 8 - Fraud Execution:
+CAPEC-210 (Abuse of Functionality), CAPEC-212 (Functionality Misuse - ATS)
+→ Adversary or automated ATS logs in with stolen credentials+OTP, executes fraudulent transfer
+→ Behavioral indicator: Accessibility-driven UI automation on banking app
+
+Phase 9 - Cover Tracks:
+CAPEC-508 (Removing/Short-circuiting Validation Logic)
+→ Malware deletes logs, intercepts balance change notifications, may factory-reset device
+→ APK indicators: DevicePolicyManager.wipeData() capability (BIND_DEVICE_ADMIN permission)

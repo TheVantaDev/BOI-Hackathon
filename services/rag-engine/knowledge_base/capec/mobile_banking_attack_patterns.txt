@@ -1,0 +1,155 @@
+CAPEC (Common Attack Pattern Enumeration and Classification) - Mobile Banking Relevant Patterns
+Source: https://capec.mitre.org/ - curated for Android banking fraud context
+Curated for: Bank of India Sentinel Platform
+
+===========================================================================
+CAPEC-164: Mobile Phishing (Smishing)
+===========================================================================
+Description: An adversary sends fraudulent SMS messages to a target user impersonating a trusted organization (bank, tax authority, courier) with a malicious URL or phone number. This pattern specifically exploits the limited screen space on mobile devices which often conceals the true URL, and the high open-rate of SMS vs email.
+
+Attack steps:
+1. Adversary selects target demographic (e.g., SBI customers, Indian taxpayers)
+2. Crafts convincing SMS lure ("Your account is blocked, verify now")
+3. Sends bulk SMS using spoofed sender ID appearing to be "SBIINB" or "HDFCBK"
+4. Link leads to: (a) phishing website, (b) direct APK download, or (c) Google Play with fake app
+5. Victim installs malicious APK or enters credentials on phishing page
+
+Technical enablers:
+- SMS sender ID spoofing (SSID abuse) — sending SMS appearing to come from alphanumeric IDs used by real banks
+- URL shorteners (bit.ly, tinyurl) to obscure malicious domain
+- HTTPS phishing pages with valid SSL certificates (Let's Encrypt, free TLS) to appear legitimate
+- Custom Android APK download landing pages that look like official app stores
+
+Indian context: Sender IDs like "SBIINB", "HDFCBK", "ICICIB" are used by real banks and can be spoofed via SMS aggregators in some jurisdictions. RBI has mandated SMS scrubbing but enforcement gaps exist.
+
+Countermeasures:
+- Customer education about never installing APKs from SMS links
+- Bank-side: register all official sender IDs with TRAI DLT portal
+- Technical: APK analysis platform (this system) to analyze APKs before they cause harm
+- Network: SMS gateway filtering for known malicious URLs
+
+===========================================================================
+CAPEC-98: Phishing
+===========================================================================
+Description: An adversary crafts a fraudulent UI or communication that mimics a trusted source to trick the user into providing sensitive information.
+
+Mobile-specific variants:
+- Overlay Phishing: Malicious app overlays a transparent or opaque window over the legitimate banking app. User believes they are interacting with the real bank app but is actually entering credentials into the malicious overlay.
+- Clone App Phishing: Full clone of banking app distributed outside Play Store; identical UI, credentials sent to attacker instead of bank.
+- WebView Phishing: Legitimate-looking app opens bank's login page in a WebView but with JavaScript injection to capture form submissions.
+- Voice Phishing (Vishing) + App: Adversary calls victim pretending to be bank support, instructs victim to install a "security app" (actually RAT/banking trojan).
+
+Technical detail for overlay phishing:
+- Trigger: Monitor foreground app using UsageStatsManager (requires PACKAGE_USAGE_STATS permission) or AccessibilityService
+- Display: WindowManager.addView() with TYPE_APPLICATION_OVERLAY creates system-level window
+- Capture: Custom View with EditText fields where bank's logo and branding are copied
+- Exfiltrate: On form submission button click, send captured credentials to C2 via HTTP
+- Dismiss: Remove overlay, let user continue with real bank app (they assume login failed and retry on real app)
+
+Detection approach:
+APKs containing both the target banking app package names AND WindowManager overlay code AND network transmission code should be flagged as overlay phishing trojans with high confidence.
+
+===========================================================================
+CAPEC-151: Identity Spoofing
+===========================================================================
+Description: An adversary assumes the identity of a legitimate user through credential theft or session hijacking, enabling fraudulent transactions on behalf of the victim.
+
+Mobile banking attack chain for identity spoofing:
+1. Credential theft via overlay attack or keylogging (obtains username + password)
+2. OTP bypass via SMS interception (obtains second factor)
+3. Session token theft via man-in-the-browser (reads session cookies from WebView)
+4. Account takeover: adversary or automated malware logs into victim's account with stolen credentials + OTP
+
+Device takeover variant (advanced):
+- Malware grants adversary full remote control via VNC/RAT capability
+- Adversary manually navigates the banking app on the victim's device
+- All transactions appear to originate from the victim's legitimate device (defeats device fingerprinting)
+- Called "Device Takeover Fraud" (DTO) in banking fraud terminology
+
+UPI-specific identity spoofing:
+- Adversary obtains victim's UPI ID via social engineering or data breach
+- Sends collect/pull request to victim's UPI ID from attacker-controlled VPA
+- Tricks victim into approving the collect request (e.g., claiming it's a refund approval)
+- Victim unknowingly sends money to attacker
+- Note: This does not require malware — pure social engineering
+
+Countermeasures:
+- Transaction anomaly detection: flag transfers to new beneficiaries, high-value transfers, off-hours activity
+- Device risk scoring: flag high-risk devices (root, unknown apps with dangerous permissions)
+- Step-up authentication for high-value transactions
+
+===========================================================================
+CAPEC-549: Local Execution of Code
+===========================================================================
+Description: Adversary executes code in the context of another application, gaining its privileges or data access.
+
+Android-specific implementation:
+- Content Provider injection: malicious app queries exported ContentProvider of banking app with injection payload
+- Intent-based attacks: malicious app sends crafted Intents to exported Activities/Services of target app
+- Accessibility-driven code execution: accessibility service executes actions within target app's UI context
+
+Detection: AndroidManifest analysis for exported components without proper permission requirements.
+
+===========================================================================
+CAPEC-167: Targeted Malware
+===========================================================================
+Description: Adversary develops malware specifically targeting a particular organization, sector, or user population.
+
+India banking sector targeted malware characteristics:
+- Hardcoded list of Indian bank package names in target configuration
+- Indian language UI (Hindi, Tamil, Telugu) in overlay screens to increase victim trust
+- Lure themes specific to Indian government programs (PM Kisan, Ayushman Bharat)
+- Specifically timed campaigns around tax filing deadlines (March-July), bank KYC dates
+- Fake apps impersonating Indian bank apps: YONO SBI, iMobile Pay, HDFC Mobile Banking
+
+Sector-specific indicators for BOI Sentinel:
+If an APK contains any of the following specific strings, treat as targeted Indian banking malware:
+- "com.sbi.SBIFreedomPlus" or "com.sbi.lotusintouch"
+- "YONO" (SBI brand name)
+- "BHIM" (UPI app reference)
+- "NEFT" or "IMPS" or "UPI" in overlay HTML/strings
+- Indian bank IFSC codes in string constants
+- Aadhaar or PAN card form fields in WebView content
+
+===========================================================================
+CAPEC-560: Use of Known Domain Credentials
+===========================================================================
+Description: Adversary leverages stolen credentials (from previous banking trojan campaign or data breach) to access banking systems.
+
+Relevance to APK analysis:
+- Previously stolen credential databases are used to pre-test malware overlay success rates
+- APK may contain pre-populated test credentials in debug builds
+- Check for hardcoded account numbers, UPI IDs, or credentials in APK strings
+- These would appear as hardcoded_urls or strings matching bank account number patterns (\d{9,18}) combined with IFSC (\b[A-Z]{4}0[A-Z0-9]{6}\b)
+
+===========================================================================
+CAPEC-212: Functionality Misuse
+===========================================================================
+Description: An adversary exploits legitimate functionality to achieve malicious goals.
+
+Android Accessibility API misuse:
+The Android Accessibility API is designed to help users with disabilities interact with their devices. Banking trojans abuse this same API for:
+- Reading screen content (designed for screen readers — misused for credential theft)
+- Simulating user input (designed for switch access — misused for automated fraud)
+- Monitoring app transitions (designed for navigation aids — misused for overlay trigger timing)
+
+The Android platform cannot distinguish between legitimate accessibility tool usage and malicious abuse at the permission level. Detection must happen through behavioral analysis (what the accessibility service does, not that it exists).
+
+===========================================================================
+CAPEC-115: Authentication Bypass
+===========================================================================
+Description: An adversary bypasses authentication mechanisms to gain unauthorized access.
+
+SMS OTP bypass in Indian banking:
+SMS OTP is the most widely deployed second factor in Indian banking (required by RBI for all digital transactions above certain thresholds). Banking trojans specifically target this mechanism because:
+- Once an adversary has the banking password (via overlay/phishing), SMS OTP is the only remaining barrier
+- SMS interception completely defeats OTP-based 2FA
+- This is why READ_SMS + RECEIVE_SMS permissions in non-messaging apps are critical risk indicators
+
+Advanced bypass methods:
+- SIM Swap: adversary bribes/social-engineers telecom operator to transfer victim's number to attacker SIM (requires no malware but sometimes coordinated with malware for data gathering)
+- SS7 Attack: exploits telecom signaling protocol to intercept SMS at network level (sophisticated, requires telecom access)
+- Malware OTP interception: simplest and most common — the malware intercepts OTP before victim sees it
+
+Defensive implications:
+Banks should consider hardware token (TOTP authenticator app) or biometric-based authentication for high-value transactions as SMS OTP has been systematically compromised by the banking trojan ecosystem.

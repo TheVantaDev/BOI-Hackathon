@@ -1,0 +1,199 @@
+CERT-In Security Advisories - Android Banking Malware Targeting India
+(Educational summary in CERT-In advisory style for training and threat intelligence purposes)
+Note: These represent synthesized advisory content based on publicly documented Indian banking malware campaigns.
+Curated for: Bank of India Sentinel Platform
+
+===========================================================================
+CERT-In ADVISORY SUMMARY: DRINIK BANKING TROJAN
+Advisory Context: Android Banking Trojan Targeting Indian Banks
+Classification: HIGH
+
+===========================================================================
+Overview:
+DRINIK is an Android banking trojan specifically targeting Indian banking customers. It has been reported targeting customers of the State Bank of India (SBI) and other major Indian banks. The malware initially appeared as a fake income-tax management app (iMobile) and evolved across multiple versions to include screen recording, SMS interception, and keylogging capabilities.
+
+Affected Users: Indian customers of SBI, HDFC, ICICI, Axis, BoI, and other PSU/private banks who received SMS links for KYC updates or income tax refunds.
+
+Technical Description:
+DRINIK masquerades as income tax refund processing applications or KYC verification tools. Upon installation, it:
+1. Requests Accessibility Service access under the guise of "security features"
+2. Requests SMS permissions claiming "verification purposes"
+3. Begins recording device screen using MediaProjection API
+4. Intercepts OTP messages sent by banking systems
+5. Displays credential-stealing overlays when banking apps are launched
+6. Exfiltrates captured data (credentials, OTPs, recorded video) to remote C2 servers
+
+Indicators of Compromise:
+- APK names observed: iMobile.apk, Income_Tax.apk, SBI_KYC.apk, Tax_Refund.apk
+- Package names: com.income.tax.refund, com.sbi.kyc.verification (fake packages, not official)
+- Permissions: READ_SMS, RECEIVE_SMS, RECORD_AUDIO, BIND_ACCESSIBILITY_SERVICE, CAMERA
+- C2 infrastructure: Connections to recently registered domains with Indian-sounding names
+
+Recommended Actions for Banks:
+1. Monitor for transaction patterns consistent with ATO (Account Takeover): new beneficiaries added, large transfers within 24 hours of first mobile login
+2. Alert customers via IVR and SMS about unsolicited APK installation requests
+3. Share IOCs (domain list, package names) with CERT-In for broader ecosystem blocking
+4. Consider mandatory device risk assessment before permitting mobile banking transactions
+
+===========================================================================
+CERT-In ADVISORY SUMMARY: MOBILE BANKING FRAUD VIA SMS PHISHING
+Advisory Context: Widespread Smishing Campaign, India Banking Sector
+Classification: HIGH
+
+===========================================================================
+Overview:
+Ongoing SMS-based phishing campaigns continue to distribute malicious Android APKs targeting customers of major Indian banks including SBI, HDFC, ICICI, Axis Bank, and UPI payment platforms. These campaigns exploit RBI-mandated KYC processes and government scheme registrations as lures.
+
+Campaign Characteristics:
+- Bulk SMS from spoofed sender IDs mimicking official bank SMS headers
+- Short URLs redirecting to APK download pages hosted on compromised servers or bulletproof hosting
+- APKs signed with throwaway developer certificates
+- Targeted at users in Tier 2 and Tier 3 cities with lower digital literacy
+
+Technical TTPs:
+- Initial vector: SMS with shortened URL
+- Payload: Banking trojan APK with overlay + SMS interception capability
+- C2: PHP-based panel on dedicated server; some campaigns using Telegram bot API
+- Exfiltration: Device info, installed apps list, SMS content, captured credentials
+- Persistence: BOOT_COMPLETED receiver ensures survival across restarts
+
+Recommended Mitigations:
+For Banks:
+- Implement out-of-band confirmation (IVR call-back) for first-time beneficiary additions
+- Deploy mobile device risk scoring using signals: root status, third-party APK installation, unknown app permissions
+- Issue DMARC/DKIM properly for email; work with TRAI for SMS sender ID protection
+- Set transaction velocity limits for new mobile banking users
+
+For Customers (awareness guidance):
+- Never install apps from links received via SMS or WhatsApp
+- Verify app publisher name and download count on Google Play Store before installing
+- Enable Google Play Protect
+- Treat any app requesting Accessibility Service access as high-risk unless the purpose is clearly accessibility-related
+
+===========================================================================
+CERT-In ADVISORY SUMMARY: ANUBIS/CERBERUS VARIANTS IN INDIA
+Advisory Context: MaaS (Malware-as-a-Service) Banking Trojans Detected Targeting Indian Users
+Classification: HIGH
+
+===========================================================================
+Overview:
+Variants of the Anubis and Cerberus banking trojan families (source code of both leaked on underground forums) have been adapted and deployed targeting Indian banking customers. These represent a shift from custom-built Indian malware to adaptation of established global banking trojan codebases for the Indian market.
+
+Key Differences in India-Targeted Variants:
+- Overlay templates specifically crafted for Indian banking apps (YONO SBI, HDFC Mobile, iMobile)
+- C2 configuration includes Indian UPI app package names
+- Lure materials in Hindi and regional languages
+- Geofencing: malware only activates on devices with Indian SIM cards (MCC 404/405)
+
+Technical Indicators:
+- Obfuscated Java code with encrypted string constants
+- AccessibilityService with onAccessibilityEvent monitoring list of ~20 Indian banking app packages
+- WindowManager overlay triggered on detection of SBI, HDFC, ICICI, Axis, Paytm, PhonePe apps
+- C2 check-in via HTTPS POST every 10-15 minutes
+- Anti-emulation checks: Build.HARDWARE, TelephonyManager.getImei() null check
+
+Specific IOCs (illustrative, based on public reporting patterns):
+- C2 domain patterns: [bankname]-kyc-[random].xyz, secure-[bankname]-app.shop
+- Certificate CN: typically "Android Debug" or random 3-5 character CN
+- Minimum SDK: 21 (Android 5.0) for maximum device coverage
+
+===========================================================================
+CERT-In ADVISORY SUMMARY: DEVICE TAKEOVER FRAUD (DTO) VIA ANDROID BANKING MALWARE
+Advisory Context: Advanced Persistent Banking Fraud - Device Takeover
+Classification: CRITICAL
+
+===========================================================================
+Overview:
+Device Takeover (DTO) fraud represents the most sophisticated form of Android banking fraud, where attackers gain full real-time control of an infected device to conduct fraudulent banking transactions directly on the victim's device, bypassing all bank-side fraud detection systems that rely on device fingerprinting.
+
+How DTO Defeats Bank Security Controls:
+1. Transactions originate from the victim's legitimate device (correct IMEI, device fingerprint)
+2. Transactions use the victim's real IP address and network
+3. The attack uses the victim's valid session/authentication (defeats OTP)
+4. Location data shows victim's real location
+- All traditional fraud signals appear normal; the only behavioral signals are transaction pattern anomalies
+
+Technical Components Required for DTO:
+- VNC server running on victim device (streams screen to attacker)
+- Accessibility Service for input injection (attacker can tap/type on victim device remotely)
+- Screen content reading (attacker sees victim's account balance, transaction history)
+- Network tunnel to C2 server for low-latency remote control session
+
+Malware families with DTO capability: Anubis, Cerberus, TeaBot/Anatsa, BRATA, Escobar/Aberebot
+
+Recommended Bank-Side Countermeasures for DTO:
+1. Behavioral analytics: look for transactions where user doesn't follow normal navigation patterns (transaction completed in <10 seconds after app launch is suspicious)
+2. Cursor movement analysis: in apps with touch analytics, straight-line gestures are suggestive of Accessibility injection vs. natural human touch
+3. Impossible travel: session from mobile device but IP geolocation differs significantly from device's GPS
+4. Time-of-day analysis: DTO attacks often execute during off-peak hours to reduce victim awareness
+5. Biometric step-up: require fingerprint/face biometric confirmation for high-value transactions (device-bound biometric cannot be replicated by remote attacker)
+
+===========================================================================
+CERT-In ADVISORY SUMMARY: UPI FRAUD PATTERNS
+Advisory Context: UPI-Specific Fraud Vectors
+Classification: HIGH
+
+===========================================================================
+Overview:
+India's Unified Payments Interface (UPI) system has created unique fraud vectors that differ from traditional net-banking fraud. The following patterns are documented in Indian banking fraud reports:
+
+UPI-Specific Fraud Vectors:
+
+1. COLLECT REQUEST SCAM (Social Engineering, no malware required):
+Victim is contacted by attacker posing as bank/customer service, told a "refund" is being sent. Attacker sends a UPI collect request for the "refund amount." Victim approves thinking they are receiving money, actually authorizes debit. Banks should educate: "Banks never send money via collect request; approving a collect request ALWAYS sends money FROM you."
+
+2. QR CODE SCAM (Social Engineering + QR):
+Attacker sends victim a QR code claiming it's for receiving money. In UPI, scanning and approving a QR code is a PAYMENT action, not a receive action. Victims pay attacker instead of receiving money.
+
+3. SCREEN SHARING SCAM (Remote Access Social Engineering):
+Attacker convinces victim to install remote access app (AnyDesk, TeamViewer) claiming to help resolve a bank issue. Attacker watches screen while victim enters UPI PIN, then takes over remotely.
+
+4. FAKE UPI APP (Malware):
+Malicious app cloning PhonePe or BHIM interface. Transactions entered in the fake app are captured; real transactions made through attacker's UPI ID.
+
+5. UPI PIN PHISHING (Overlay):
+Banking trojan displays overlay during UPI PIN entry screen. The PIN (entered for any UPI transaction) is captured and forwarded to attacker.
+
+Malware IOC for UPI Targeting:
+- String "npci" in code (NPCI is UPI operator)
+- Target package: in.org.npci.upiapp (BHIM), com.phonepe.app, com.google.android.apps.nbu.paisa.user
+- EditText accessibility monitoring during UPI PIN entry (4-6 digit PIN entry field)
+- Screen content capture targeting "Enter UPI PIN" screen text
+
+===========================================================================
+RBI REGULATORY CONTEXT FOR FRAUD RESPONSE
+===========================================================================
+
+Reserve Bank of India (RBI) guidelines relevant to banking malware incidents:
+
+Master Direction on Digital Payment Security Controls (2021):
+- Banks must implement device binding and app-based risk scoring for mobile banking
+- Mandatory real-time fraud monitoring for UPI and mobile banking transactions
+- Incident reporting to RBI within 6 hours of detection of fraud with systemic implications
+- Customer liability limitations: Customer not liable if fraud occurs without negligence and reported promptly
+
+RBI Circular on Mobile Banking Security:
+- Banks required to implement end-to-end encryption for mobile banking
+- App integrity checks (certificate pinning, tamper detection) recommended
+- Banks should offer mobile banking only on devices with Google Play Protect enabled
+
+CERT-In Reporting Requirements:
+- Malware incidents affecting banking systems must be reported to CERT-In within 6 hours
+- Information required: malware hash, C2 IP/domains, affected user count, containment actions
+- CERT-In coordinates with NCIIPC for critical banking infrastructure incidents
+
+IT Act Provisions (relevant to banking malware):
+- Section 43: Unauthorized access to computer systems (covers installation of banking trojans)
+- Section 66: Computer-related offences (criminal prosecution for banking fraud via malware)
+- Section 66C: Identity theft (using stolen banking credentials)
+- Section 66D: Cheating by personation using computer resources (overlay phishing)
+
+Incident Response Framework:
+On detection of a banking malware campaign targeting bank customers:
+1. Immediately block identified C2 domains/IPs at bank's DNS/network level
+2. Notify CERT-In within 6 hours (mandatory)
+3. Initiate proactive outreach to potentially affected customers
+4. Freeze accounts showing anomalous post-infection activity
+5. Coordinate with Google for Play Protect signature update (if app is/was on Play Store)
+6. Share IOC package with BFSI-ISAC (Banking Sector Information Sharing and Analysis Center)
+7. File FIR with CBI Cyber Crime division for investigation and international takedown coordination

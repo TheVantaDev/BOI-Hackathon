@@ -7,7 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/models
+# Explicitly copy the trained XGBoost model into the image
+COPY models/xgb_risk_model.json /app/models/xgb_risk_model.json
 
 ENV MODEL_PATH=/app/models/xgb_risk_model.json
 

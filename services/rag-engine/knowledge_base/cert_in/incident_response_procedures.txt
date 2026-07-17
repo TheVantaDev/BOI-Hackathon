@@ -1,0 +1,196 @@
+CERT-In Advisory: Incident Response and Forensics for Android Banking Malware
+Advisory Context: Operational guidance for cybersecurity teams
+Curated for: Bank of India Sentinel Platform - response context
+
+===========================================================================
+INCIDENT CLASSIFICATION FOR ANDROID BANKING MALWARE
+===========================================================================
+
+Severity Level 1 - CRITICAL (Immediate Response Required):
+- Active malware campaign confirmed targeting Bank of India customers
+- Customer financial loss confirmed as result of malware infection
+- C2 infrastructure actively serving banking trojan payloads to Indian devices
+- Malware with device takeover capability confirmed deployed in wild
+Response time: Immediate (within 1 hour)
+
+Severity Level 2 - HIGH (Same-Day Response):
+- New banking trojan variant detected targeting Indian banking sector
+- Malicious APK impersonating Bank of India confirmed in distribution
+- IOCs (domains/IPs) associated with known banking malware confirmed active
+Response time: Within 4 hours
+
+Severity Level 3 - MEDIUM (24-Hour Response):
+- Suspected banking malware submitted for analysis (no confirmed victims)
+- Known malware variant detected in distribution but no confirmed BoI customer targeting
+- Suspicious APK with high static analysis risk score submitted
+Response time: Within 24 hours
+
+Severity Level 4 - LOW (Standard Queue):
+- Potentially unwanted application (PUA) detected
+- Historical/inactive malware sample for intelligence purposes
+Response time: 72 hours
+
+===========================================================================
+FORENSIC ARTIFACTS FOR ANDROID BANKING MALWARE INVESTIGATION
+===========================================================================
+
+Device-Level Forensics (if physical device available):
+1. APK extraction: adb pull /data/app/<package>/<package>.apk
+2. SharedPreferences: /data/data/<package>/shared_prefs/ (may contain C2 config, stolen data)
+3. Database files: /data/data/<package>/databases/ (may contain intercepted SMS, credentials)
+4. Log files: /data/data/<package>/files/ (operational logs, exfiltrated data queue)
+5. Network connections: netstat -an (active C2 connections)
+6. Running services: adb shell dumpsys activity services (identify malicious background services)
+7. Accessibility services: adb shell settings get secure enabled_accessibility_services
+
+APK Static Analysis Artifacts:
+1. AndroidManifest.xml — permissions, components, intent filters
+2. classes.dex — compiled bytecode (input for Androguard, JADX)
+3. assets/ — encrypted payloads, configuration files, overlay HTML templates
+4. res/ — overlay UI resources (fake bank login screens in drawable/)
+5. lib/ — native libraries with obfuscated functionality
+6. META-INF/ — certificate and signing information
+
+Network Forensics Artifacts:
+1. DNS queries to C2 domains (detectable in DNS logs)
+2. HTTP/HTTPS POST requests to C2 endpoints (in proxy/firewall logs)
+3. Telegram API calls with bot tokens (in HTTPS inspection logs if TLS inspection deployed)
+4. Large data uploads from infected devices (content anomaly detection)
+
+===========================================================================
+APK ANALYSIS WORKFLOW (OPERATIONAL)
+===========================================================================
+
+Step 1: Triage (5 minutes)
+- Check SHA-256 hash against VirusTotal and MalwareBazaar
+- If known malicious: immediately classify and proceed to response
+- Check certificate fingerprint against known banking trojan certificate database
+- Check package name against known malicious package list
+
+Step 2: Static Analysis (15-30 minutes)
+- Extract and parse AndroidManifest.xml: list all permissions, identify dangerous combinations
+- Run Androguard: identify suspicious APIs, check obfuscation ratio
+- Extract strings: identify hardcoded URLs, IP addresses, target package names
+- Run YARA rules: match against banking trojan signatures
+
+Step 3: Dynamic Analysis (5-60 minutes in sandbox)
+- Install in MobSF dynamic sandbox with Android emulator
+- Observe: network connections, SMS interception, overlay display, accessibility events
+- Capture network traffic (tcpdump) for C2 communication analysis
+- Run Frida scripts to hook sensitive APIs (SMS, network, crypto)
+
+Step 4: Classification (5 minutes)
+- Combine static + dynamic findings
+- Apply classification decision tree (see malware_family_profiles.txt)
+- Generate risk score and severity level
+- Map to MITRE ATT&CK techniques
+
+Step 5: IOC Extraction
+- Extract C2 domains and IPs
+- Extract malicious package names
+- Extract certificate fingerprints
+- Extract YARA-matchable byte signatures
+
+Step 6: Response
+- Block C2 IOCs at bank's network perimeter
+- Report to CERT-In (if above threshold)
+- Share IOCs with BFSI-ISAC
+- Alert affected customers
+- Update bank's mobile fraud detection rules
+
+===========================================================================
+IOC SHARING FORMAT
+===========================================================================
+
+Standard IOC report format for sharing with CERT-In and BFSI-ISAC:
+
+Sample Format:
+---
+Malware Name: [Family] [Variant ID]
+SHA-256: [APK hash]
+Package Name: [com.malware.package]
+Certificate SHA-256: [certificate fingerprint]
+Detection Date: [YYYY-MM-DD]
+Affected Region: India
+Target Banks: SBI, HDFC, [list]
+
+C2 Infrastructure:
+- Domain: malicious-domain.xyz (IP: x.x.x.x, ASN: AS12345, Hosting: HostingProvider)
+- Domain: [additional domains]
+- IP: [additional IPs]
+
+MITRE ATT&CK:
+- T1412: Capture SMS Messages
+- T1417: Input Capture (Accessibility)
+- [additional techniques]
+
+YARA Signature: [rule name]
+
+Recommended Actions:
+- Block [list of domains/IPs] at network perimeter
+- [Additional actions]
+---
+
+===========================================================================
+MOBILE DEVICE RISK SCORING FOR FRAUD PREVENTION
+===========================================================================
+
+Banks can implement device risk scoring at the mobile banking session level to detect potentially compromised devices:
+
+High-Risk Device Signals:
+- Accessibility Services enabled for unknown apps (non-system, non-known-good apps) → HIGH RISK
+- Device rooted (root access detected) → HIGH RISK
+- Unknown sources enabled (allows sideloading) → MEDIUM RISK
+- No Google Play Protect or disabled → MEDIUM RISK
+- App installed from outside Play Store (PackageManager.getInstallerPackageName() != "com.android.vending") → MEDIUM RISK
+- Banking app running in accessibility service target list of another app → CRITICAL
+
+Risk-Adaptive Authentication:
+Based on device risk score, apply step-up authentication:
+- Risk Score 0-30: Standard OTP authentication
+- Risk Score 31-60: OTP + manual review trigger for large transactions
+- Risk Score 61-80: OTP + biometric confirmation required
+- Risk Score 81-100: Block mobile session, require branch/ATM transaction, notify customer
+
+Transaction Risk Signals Post-Infection:
+- New beneficiary added + transfer within 2 hours (common ATS pattern)
+- Transfer to non-individual account from retail customer (mule account indicator)
+- Transfer amount near daily/transaction limit (maximizing theft)
+- Transaction initiated outside customer's normal geographic area
+- Multiple failed OTP attempts followed by success (interception attempt)
+- Transaction time outside customer's historical usage hours
+
+===========================================================================
+CONSUMER AWARENESS CONTENT
+===========================================================================
+
+What Bank of India customers should know:
+(This content is for generating customer-facing advisories)
+
+1. Bank of India will NEVER ask you to:
+- Install an app via an SMS link
+- Share your OTP with anyone, including bank employees
+- Give remote access to your device
+- Approve a UPI "collect" request to receive money
+
+2. Signs your device may be infected:
+- Battery draining faster than usual (background malware activity)
+- Unexplained data usage spikes
+- Phone gets hot without intensive use
+- You did NOT receive SMS OTPs you expected (malware may be suppressing them)
+- Unknown transactions appear in your bank account
+- Other people receiving strange messages from your number
+
+3. Immediate steps if you suspect infection:
+- Immediately call Bank of India customer care to block your account: 1800-103-1906
+- Do NOT open your banking app on the suspected device
+- Transfer to a trusted device and access account from there
+- Take the device to a service center or perform factory reset (after backing up photos to computer)
+- File a police cybercrime complaint at https://cybercrime.gov.in
+
+4. Safe banking practices:
+- Download Bank of India mobile banking app ONLY from Google Play Store
+- Verify the developer name: "Bank of India" (not a third party)
+- Enable two-factor authentication on your Google account
+- Regularly check your registered mobile number with the bank has not been changed
+- Set low transaction limits and increase only when needed for large transfers

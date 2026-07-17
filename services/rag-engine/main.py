@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from typing import List, Optional
 
 from fastapi import FastAPI, BackgroundTasks
@@ -6,9 +7,19 @@ from pydantic import BaseModel
 
 from ingestion import ingest_mitre_docs, ingest_capec, ingest_cert_advisories, ingest_malware_intel
 from retrieval import retrieve_context
+from startup_ingest import start_background_ingestion
 
-app = FastAPI(title="RAG Engine Service")
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Trigger knowledge base ingestion into ChromaDB on startup (non-blocking)
+    start_background_ingestion()
+    yield
+
+
+app = FastAPI(title="RAG Engine Service", lifespan=lifespan)
 
 
 class RetrieveRequest(BaseModel):

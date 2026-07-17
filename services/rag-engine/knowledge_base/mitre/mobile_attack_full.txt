@@ -1,0 +1,102 @@
+MITRE ATT&CK for Mobile - Android Banking Malware Techniques
+Source: MITRE ATT&CK Mobile Matrix (https://attack.mitre.org/matrices/mobile/)
+Curated for: Bank of India Sentinel Platform - Android threat analysis context
+
+===========================================================================
+T1412 - Capture SMS Messages
+Tactic: Collection
+Platform: Android
+===========================================================================
+Adversaries may capture SMS messages on a compromised device to obtain sensitive information. Banking trojans leverage this technique primarily to intercept One-Time Passwords (OTPs) sent by banking applications and payment platforms as a second authentication factor. On Android, this requires the READ_SMS and RECEIVE_SMS permissions. Modern variants register a BroadcastReceiver for the android.provider.Telephony.SMS_RECEIVED intent, allowing the app to silently intercept incoming SMS before the user sees it. Some families (e.g., Anubis, Cerberus) use Accessibility Services to read the SMS notification content without needing the SMS permission explicitly, bypassing permission-based detection. Detection: Presence of READ_SMS, RECEIVE_SMS, or SEND_SMS permissions combined with no legitimate messaging-app functionality. Indicators in code: SmsManager, SmsMessage, android.provider.Telephony.SMS_RECEIVED broadcast receiver, or Accessibility event monitors targeting com.android.mms or messaging app package names.
+
+===========================================================================
+T1417 - Input Capture (Accessibility Services)
+Tactic: Collection
+Platform: Android
+===========================================================================
+Adversaries abuse Android Accessibility Services to capture user input, perform overlay attacks, and execute actions on behalf of the user. The BIND_ACCESSIBILITY_SERVICE permission combined with AccessibilityService implementation allows malware to: (1) read text from any on-screen element including banking app username/password fields, (2) simulate taps, swipes, and text input to perform Automatic Transfer System (ATS) fraud, (3) intercept and suppress OTP notifications, (4) prevent the user from uninstalling the malware by intercepting the uninstall confirmation dialog and clicking "cancel". To obtain this permission, banking trojans typically display a fake prompt explaining why accessibility access is "required" (e.g., claiming it is needed for a "security feature"). Detection: BIND_ACCESSIBILITY_SERVICE permission + AccessibilityService subclass in the manifest + onAccessibilityEvent handlers that query TYPE_WINDOW_CONTENT_CHANGED or TYPE_WINDOW_STATE_CHANGED events on targeted banking package names. Perform global actions (GLOBAL_ACTION_BACK, GLOBAL_ACTION_HOME) without user intent.
+
+===========================================================================
+T1516 - Input Injection
+Tactic: Impact
+Platform: Android
+===========================================================================
+Malicious applications can inject input events into other applications using Android Accessibility Services. This enables automated banking fraud without requiring operator involvement. SharkBot and Gustuff are known for their Automatic Transfer System (ATS) capability, which uses input injection to: fill in beneficiary account details, enter transaction amounts, confirm OTPs, and approve transfers entirely programmatically. Detection: AccessibilityService methods: performAction(ACTION_SET_TEXT), performGlobalAction, dispatchGesture. Combined with reading window state from financial app package names (com.sbi.*, com.hdfc.*, net.one97.paytm, in.org.npci.upiapp, com.bankofbaroda.mobilebanking, com.axis.mobile).
+
+===========================================================================
+T1426 - System Information Discovery
+Tactic: Discovery
+Platform: Android
+===========================================================================
+Banking trojans routinely collect device and SIM information for victim fingerprinting, fraud detection evasion, and C2 registration. Common methods: TelephonyManager.getDeviceId() / getImei() (returns IMEI), getSubscriberId() (returns IMSI), getSimSerialNumber() (SIM ICCID), getNetworkOperatorName(), getLine1Number() (phone number). This data is typically transmitted to the C2 server during initial check-in, allowing the operator to identify the device, the carrier, and the victim's phone number (used in SIM swap fraud or for targeted smishing). Requires READ_PHONE_STATE permission. Detection: Calls to TelephonyManager methods combined with network transmission shortly after install.
+
+===========================================================================
+T1582 - SMS Control
+Tactic: Impact
+Platform: Android
+===========================================================================
+Adversaries send fraudulent SMS messages from the compromised device. Used for: (1) self-propagation — sending smishing links to all contacts to spread the malware (FluBot's primary propagation mechanism), (2) premium SMS fraud — sending messages to premium-rate numbers to generate revenue, (3) SIM swap enablement — contacting the carrier's automated systems. Requires SEND_SMS permission. Detection: SmsManager.sendTextMessage() calls in non-messaging apps; SEND_SMS permission in apps with no legitimate messaging purpose. READ_CONTACTS permission combined with SEND_SMS is a strong combined indicator of a spreading trojan.
+
+===========================================================================
+T1544 - Ingress Tool Transfer / Dynamic Code Loading
+Tactic: Command and Control
+Platform: Android
+===========================================================================
+Android malware frequently loads additional code after installation to: evade static analysis, bypass app-store review, and update attack payloads without a full reinstall. Mechanisms: DexClassLoader — loads a .dex or .apk from a file path specified at runtime, PathClassLoader — loads code from the app's own directory (used to execute downloaded payloads), InMemoryDexClassLoader (API 26+) — loads code directly from a byte array, never written to disk, making forensic recovery harder, Reflection (getDeclaredMethod, invoke) — used to call methods whose names are obfuscated or determined at runtime. Detection: Presence of DexClassLoader, PathClassLoader, InMemoryDexClassLoader, or Class.forName() calls combined with network download activity for .dex, .apk, or .jar files. Encrypted or base64-encoded payload URLs in strings.
+
+===========================================================================
+T1406 - Obfuscated Files or Information
+Tactic: Defense Evasion
+Platform: Android
+===========================================================================
+Android malware uses code obfuscation to hinder static analysis and evade signature-based detection. Common techniques: ProGuard/R8 — renames classes and methods to single-letter names (a, b, c pattern — detectable via ratio of short class names), String encryption — strings (especially C2 URLs, target package names) are encrypted with XOR, AES, or custom ciphers and decrypted at runtime, Reflection — class/method names stored as strings and resolved at runtime using getDeclaredMethod, Native code (.so files) — sensitive logic moved to native libraries where Java decompilation is ineffective, Packing — the actual DEX payload is stored encrypted in assets/ and decrypted at runtime. Detection: Ratio of class names ≤2 chars exceeds 30% of total classes. Presence of Base64.decode(), Cipher.getInstance(), SecretKeySpec in non-cryptographic application contexts. Assets containing .dex or files with no extension that are large blobs.
+
+===========================================================================
+T1430 - Location Tracking
+Tactic: Collection
+Platform: Android
+===========================================================================
+Banking malware may collect device GPS coordinates for: operator situational awareness, fraud detection bypass (transactions from unexpected geographies trigger bank alerts), and targeted attack customization. Requires ACCESS_FINE_LOCATION or ACCESS_COARSE_LOCATION permission. LocationManager or FusedLocationProviderClient APIs used. Detection: Location permission in an app that has no mapping, navigation, or location-based service functionality; combined with network exfiltration of location data.
+
+===========================================================================
+T1429 - Capture Audio
+Tactic: Collection
+Platform: Android
+===========================================================================
+Spyware and advanced banking trojans may capture audio from the device microphone. Requires RECORD_AUDIO permission. MediaRecorder or AudioRecord API. Used by spyware-hybrid trojans to eavesdrop on verbal PIN confirmation, phone banking calls, or background conversations. Detection: RECORD_AUDIO permission in non-media apps; background service holding a partial wakelock while recording.
+
+===========================================================================
+T1448 - Carrier Billing Fraud
+Tactic: Impact
+Platform: Android
+===========================================================================
+Malicious applications abuse WAP billing or direct carrier billing by sending HTTP requests to premium WAP billing endpoints, silently completing the purchase confirmation flow. Does not require payment credentials. Detection: HTTP requests to WAP billing endpoints combined with automated web interaction (WebView with JavaScript injection or accessibility-driven web navigation). RECEIVE_WAP_PUSH permission is a specific indicator.
+
+===========================================================================
+T1474 - Supply Chain Compromise / Malicious App in Official Store
+Tactic: Initial Access
+Platform: Android
+===========================================================================
+Some banking trojans initially appear benign on Google Play, then download the malicious payload after a delay or upon receiving a C2 command. Dropper apps used: QR code scanners, PDF readers, flashlight apps, 2FA authenticator clones. Detection: App with minimal legitimate functionality + DexClassLoader + network download of secondary payload. Version increment between initial submission and malicious update.
+
+===========================================================================
+T1422 - System Network Configuration Discovery
+Tactic: Discovery
+Platform: Android
+===========================================================================
+Malware enumerates network configuration (IP addresses, connected WiFi SSID, DNS servers) for environment awareness and fraud evasion. ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE permissions. Detection: Combined with other discovery TTPs and C2 exfiltration.
+
+===========================================================================
+MITRE ATT&CK Tactic Summary for Banking Trojans
+===========================================================================
+Initial Access: T1474 (malicious app), T1476 (deliver via social engineering)
+Execution: T1575 (native code), T1605 (command execution via accessibility)
+Persistence: T1402 (broadcast receivers - BOOT_COMPLETED), T1603 (job scheduling)
+Privilege Escalation: T1404 (exploit for privilege escalation - root exploits)
+Defense Evasion: T1406 (obfuscation), T1628 (hide artifacts), T1508 (suppress application icon)
+Credential Access: T1417 (input capture), T1412 (SMS capture)
+Discovery: T1426 (system info), T1430 (location), T1418 (installed app discovery)
+Collection: T1412, T1417, T1429, T1430, T1533 (data from local storage)
+C2: T1481 (web service as C2), T1437 (application layer protocol), T1544 (ingress tool transfer)
+Exfiltration: T1646 (exfiltration over C2 channel)
+Impact: T1582 (SMS control), T1516 (input injection), T1448 (billing fraud)
