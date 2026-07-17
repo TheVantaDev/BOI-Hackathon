@@ -5,9 +5,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // In Docker: backend service is reachable via its service name.
+        // Falls back to localhost for running outside Docker (npm run dev locally).
+        target: process.env.VITE_API_URL || 'http://backend:8000',
         changeOrigin: true,
       },
     },

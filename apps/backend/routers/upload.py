@@ -15,6 +15,21 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _sanitize(obj):
+    """
+    Recursively strip null bytes (\u0000) from all strings in a dict/list structure.
+    PostgreSQL cannot store null bytes in text/JSON columns and raises DataError.
+    APKs often contain null bytes in embedded metadata strings (e.g. Adobe XMP URLs).
+    """
+    if isinstance(obj, str):
+        return obj.replace("\x00", "")
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(i) for i in obj]
+    return obj
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -34,12 +49,13 @@ def _process_apk(apk_id: str, minio_path: str, sha256: str):
     try:
         result = asyncio.run(_run())
 
-        static = result.get("static_analysis", {})
-        dynamic = result.get("dynamic_analysis", {})
-        ti = result.get("threat_intel", {})
-        ai = result.get("ai_investigation", {})
-        fraud = result.get("fraud_intent", {})
-        score = result.get("risk_score", {})
+        # Sanitize all string values — remove null bytes PostgreSQL can't store
+        static  = _sanitize(result.get("static_analysis", {}))
+        dynamic = _sanitize(result.get("dynamic_analysis", {}))
+        ti      = _sanitize(result.get("threat_intel", {}))
+        ai      = _sanitize(result.get("ai_investigation", {}))
+        fraud   = _sanitize(result.get("fraud_intent", {}))
+        score   = _sanitize(result.get("risk_score", {}))
 
         analysis = AnalysisResult(
             apk_id=apk_id,

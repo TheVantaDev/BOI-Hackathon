@@ -6,7 +6,7 @@ import ollama
 
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
-MODEL = "llama3:8b-instruct"
+MODEL = "llama3:8b"
 
 
 def _call_llm(prompt: str) -> str:

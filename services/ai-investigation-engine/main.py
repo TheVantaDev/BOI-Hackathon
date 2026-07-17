@@ -27,9 +27,9 @@ async def investigate(req: InvestigationRequest):
         logger.exception("Investigation failed for %s: %s", req.apk_id, exc)
         return {
             "apk_id": req.apk_id,
-            "summary": "AI investigation could not complete. Check that Ollama is running with llama3:8b-instruct.",
+            "summary": "AI investigation could not complete. Check that Ollama is running with llama3:8b.",
             "classification": "Unknown",
-            "recommendations": ["Ensure Ollama service is running", "Pull llama3:8b-instruct model"],
+            "recommendations": ["Ensure Ollama service is running", "Pull llama3:8b model: docker exec infra-ollama-1 ollama pull llama3:8b"],
             "mitre_mappings": [],
             "confidence": 0.0,
         }
