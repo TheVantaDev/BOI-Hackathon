@@ -107,7 +107,10 @@ def _extract_permissions(static: dict) -> dict:
     permissions = _safe_get(static, "permissions", default=[])
     if not isinstance(permissions, list):
         permissions = []
-    dangerous = [p for p in permissions if p in DANGEROUS_PERMISSIONS]
+        
+    # permissions is a list of dicts: {"name": "...", "full": "...", "dangerous": ...}
+    dangerous = [p for p in permissions if isinstance(p, dict) and p.get("full") in DANGEROUS_PERMISSIONS]
+    
     return {
         "total_count": len(permissions),
         "dangerous_count": len(dangerous),

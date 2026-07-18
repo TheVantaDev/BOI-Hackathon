@@ -115,12 +115,24 @@ async def upload_apk_file(
 
     existing = db.query(APKUpload).filter(APKUpload.sha256 == sha256).first()
     if existing:
-        return {
-            "apk_id": str(existing.id),
-            "status": existing.status,
-            "sha256": sha256,
-            "duplicate": True,
-        }
+        if existing.status == "failed":
+            # Re-run pipeline for failed uploads
+            existing.status = "processing"
+            db.commit()
+            background_tasks.add_task(_process_apk, str(existing.id), existing.minio_path, sha256)
+            return {
+                "apk_id": str(existing.id),
+                "status": "processing",
+                "sha256": sha256,
+                "duplicate": True,
+            }
+        else:
+            return {
+                "apk_id": str(existing.id),
+                "status": existing.status,
+                "sha256": sha256,
+                "duplicate": True,
+            }
 
     apk_id = str(uuid.uuid4())
     object_name = f"{apk_id}/{file.filename}"

@@ -359,6 +359,9 @@ export default function Analysis() {
       .finally(() => setLoading(false))
   }, [id])
 
+  // Extract nested report sections for easy access
+  const risk = report?.risk_assessment || {}
+  const fraudAnalysis = report?.fraud_intent_analysis || {}
   const sa = analysis?.static_analysis || {}
   const da = analysis?.dynamic_analysis || {}
   const ti = analysis?.threat_intel || {}
@@ -412,10 +415,10 @@ export default function Analysis() {
           </div>
           <div>
             <span
-              className={`badge badge-${report?.severity?.toLowerCase().replace(' ', '-') || 'pending'}`}
+              className={`badge badge-${(risk.severity || '').toLowerCase().replace(' ', '-') || 'pending'}`}
               style={{ fontSize: 12 }}
             >
-              {report?.classification || analysis?.status}
+              {risk.classification || analysis?.status}
             </span>
           </div>
         </div>
@@ -433,13 +436,13 @@ export default function Analysis() {
           alignItems: 'center',
         }}
       >
-        <RiskScoreCard score={report?.risk_score || 0} classification={report?.severity} />
+        <RiskScoreCard score={risk.risk_score || 0} classification={risk.severity} />
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: '#ef4444' }}>
-            {report?.fraud_intent || 'Analysis Pending'}
+            {fraudAnalysis.predicted_intent || 'Analysis Pending'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 20, lineHeight: 1.5 }}>
-            {report?.classification} — Detected through static analysis, dynamic sandbox, and AI investigation
+            {risk.classification} — Detected through static analysis, dynamic sandbox, and AI investigation
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {[

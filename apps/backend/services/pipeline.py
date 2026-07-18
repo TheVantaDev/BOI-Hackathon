@@ -7,7 +7,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+TIMEOUT = httpx.Timeout(600.0, connect=10.0)
 
 
 async def _post(client: httpx.AsyncClient, url: str, payload: dict) -> dict:
