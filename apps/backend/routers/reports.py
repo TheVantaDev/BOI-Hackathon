@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from models.apk import APKUpload, AnalysisResult, RiskReport, ThreatIndicator
 from services.db import get_db
 
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+
 router = APIRouter()
 
 SEVERITY_THRESHOLDS = [
@@ -465,4 +470,51 @@ def download_pdf(apk_id: str, db: Session = Depends(get_db)):
     report = db.query(RiskReport).filter(RiskReport.apk_id == apk_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    return {"message": "PDF generation not yet implemented", "apk_id": apk_id}
+
+    apk = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    y = height - 50
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, y, "APK Risk Report")
+
+    y -= 40
+    c.setFont("Helvetica", 11)
+    c.drawString(50, y, f"Filename: {apk.filename if apk else 'Unknown'}")
+
+    y -= 20
+    c.drawString(50, y, f"Risk Score: {report.risk_score}")
+
+    y -= 20
+    c.drawString(50, y, f"Severity: {report.severity}")
+
+    y -= 20
+    c.drawString(50, y, f"Classification: {report.classification}")
+
+    y -= 40
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y, "Executive Summary")
+
+    y -= 20
+    c.setFont("Helvetica", 10)
+    summary = report.executive_summary or "No summary available."
+    for line in summary.splitlines() or [summary]:
+        c.drawString(50, y, line[:100])  # keep lines short for now
+        y -= 14
+        if y < 50:
+            break
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="report-{apk_id}.pdf"'
+        },
+    )

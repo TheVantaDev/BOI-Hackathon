@@ -9,7 +9,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import RiskScoreCard from '../components/RiskScoreCard'
 import AttackChainGraph from '../components/AttackChainGraph'
-import { getAnalysis, getReport, getDecompiledTree, getDecompiledFile } from '../api/client'
+import { getAnalysis, getReport, getDecompiledTree, getDecompiledFile, downloadPdf } from '../api/client'
 
 function getLanguageFromFilename(filename) {
   const ext = filename?.split('.').pop()?.toLowerCase()
@@ -359,6 +359,20 @@ export default function Analysis() {
       .finally(() => setLoading(false))
   }, [id])
 
+  const handleDownloadPdf = async () => {
+    try {
+      const res = await downloadPdf(id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `report-${id}.pdf`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      alert('PDF download failed')
+    }
+  }
+
   // Extract nested report sections for easy access
   const risk = report?.risk_assessment || {}
   const fraudAnalysis = report?.fraud_intent_analysis || {}
@@ -413,7 +427,10 @@ export default function Analysis() {
               SHA256: {analysis?.sha256}
             </div>
           </div>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={handleDownloadPdf} className="btn-secondary" style={{ fontSize: 12 }}>
+              Download PDF
+            </button>
             <span
               className={`badge badge-${(risk.severity || '').toLowerCase().replace(' ', '-') || 'pending'}`}
               style={{ fontSize: 12 }}
