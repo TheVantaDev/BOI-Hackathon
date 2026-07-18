@@ -114,9 +114,9 @@ services:
       - "8008:8000"
     environment:
       MOBSF_API_KEY: ${MOBSF_API_KEY:-sentinel_mobsf_key}
+      MOBSF_ANALYZER_IDENTIFIER: host.docker.internal:5556
       # No volume mount — avoids Linux permission issues on Docker Desktop for Windows.
       # MobSF stores data inside the container (fine for dev/demo use).
-      # For dynamic analysis: start AVD in Android Studio, run adb tcpip 5555
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
