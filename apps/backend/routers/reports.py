@@ -1,16 +1,17 @@
 from datetime import datetime
+from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
 from models.apk import APKUpload, AnalysisResult, RiskReport, ThreatIndicator
 from services.db import get_db
 
-from io import BytesIO
-from fastapi.responses import StreamingResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 router = APIRouter()
 
@@ -413,8 +414,8 @@ def _persist_report(db: Session, apk_id: str, compiled: dict) -> RiskReport:
     return report
 
 
-@router.get("/{apk_id}")
-def get_report(apk_id: str, db: Session = Depends(get_db)):
+def _load_report_inputs(apk_id: str, db: Session):
+    """Shared DB load for JSON report + PDF — same source of truth."""
     apk = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
     if not apk:
         raise HTTPException(status_code=404, detail="APK not found")
@@ -425,6 +426,13 @@ def get_report(apk_id: str, db: Session = Depends(get_db)):
 
     if apk.status in ("pending", "processing") and not analysis:
         raise HTTPException(status_code=202, detail="Analysis still in progress")
+
+    return apk, analysis, existing_report, indicators
+
+
+@router.get("/{apk_id}")
+def get_report(apk_id: str, db: Session = Depends(get_db)):
+    apk, analysis, existing_report, indicators = _load_report_inputs(apk_id, db)
 
     if existing_report and apk.status == "completed":
         compiled = _compile_report(apk, analysis, indicators, existing_report)
@@ -465,54 +473,33 @@ def get_report_summary(apk_id: str, db: Session = Depends(get_db)):
     }
 
 
+def _render_report_html(compiled: dict) -> str:
+    """Fill templates/report.html with the compiled report dict."""
+    env = Environment(
+        loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    return env.get_template("report.html").render(report=compiled)
+
+
+def _html_to_pdf(html: str) -> bytes:
+    """Convert HTML string to PDF bytes via WeasyPrint."""
+    # lazy import: native libs only needed when generating PDF (Docker has them)
+    from weasyprint import HTML
+
+    return HTML(string=html, base_url=str(_TEMPLATES_DIR)).write_pdf()
+
+
 @router.get("/{apk_id}/pdf")
 def download_pdf(apk_id: str, db: Session = Depends(get_db)):
-    report = db.query(RiskReport).filter(RiskReport.apk_id == apk_id).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+    apk, analysis, existing_report, indicators = _load_report_inputs(apk_id, db)
+    compiled = _compile_report(apk, analysis, indicators, existing_report)
 
-    apk = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
-
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-
-    y = height - 50
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, y, "APK Risk Report")
-
-    y -= 40
-    c.setFont("Helvetica", 11)
-    c.drawString(50, y, f"Filename: {apk.filename if apk else 'Unknown'}")
-
-    y -= 20
-    c.drawString(50, y, f"Risk Score: {report.risk_score}")
-
-    y -= 20
-    c.drawString(50, y, f"Severity: {report.severity}")
-
-    y -= 20
-    c.drawString(50, y, f"Classification: {report.classification}")
-
-    y -= 40
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Executive Summary")
-
-    y -= 20
-    c.setFont("Helvetica", 10)
-    summary = report.executive_summary or "No summary available."
-    for line in summary.splitlines() or [summary]:
-        c.drawString(50, y, line[:100])  # keep lines short for now
-        y -= 14
-        if y < 50:
-            break
-
-    c.showPage()
-    c.save()
-    buffer.seek(0)
+    html = _render_report_html(compiled)
+    pdf_bytes = _html_to_pdf(html)
 
     return StreamingResponse(
-        buffer,
+        BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="report-{apk_id}.pdf"'
