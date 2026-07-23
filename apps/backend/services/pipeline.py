@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -24,9 +25,14 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
     apk_ref = {"apk_id": apk_id, "minio_path": minio_path, "sha256": sha256}
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        static = await _post(client, f"{settings.static_analysis_url}/analyze", apk_ref)
-        dynamic = await _post(client, f"{settings.dynamic_analysis_url}/analyze", apk_ref)
 
+        # Stage 1: Static + Dynamic run IN PARALLEL — they don't depend on each other
+        static, dynamic = await asyncio.gather(
+            _post(client, f"{settings.static_analysis_url}/analyze", apk_ref),
+            _post(client, f"{settings.dynamic_analysis_url}/analyze", apk_ref),
+        )
+
+        # Stage 2: Threat intel (needs static IOCs)
         iocs = {
             "domains": static.get("hardcoded_urls", []),
             "ips": static.get("hardcoded_ips", []),
@@ -41,18 +47,17 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
             "threat_intel": threat_intel,
         }
 
-        ai_result = await _post(client, f"{settings.ai_engine_url}/investigate", combined)
-
-        fraud_result = await _post(
-            client,
-            f"{settings.fraud_engine_url}/predict",
-            {
+        # Stage 3: AI investigation + Fraud intent run IN PARALLEL
+        ai_result, fraud_result = await asyncio.gather(
+            _post(client, f"{settings.ai_engine_url}/investigate", combined),
+            _post(client, f"{settings.fraud_engine_url}/predict", {
                 "apk_id": apk_id,
-                "analysis_summary": ai_result.get("summary", ""),
+                "analysis_summary": combined.get("static", {}).get("manifest", {}).get("package_name", ""),
                 "indicators": combined,
-            },
+            }),
         )
 
+        # Stage 4: Risk scoring (needs everything)
         scoring_payload = {
             "static": static,
             "dynamic": dynamic,
@@ -60,6 +65,7 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
             "ai_confidence": ai_result.get("confidence", 0.5),
         }
         score_result = await _post(client, f"{settings.risk_scoring_url}/score", scoring_payload)
+
 
     return {
         "static_analysis": static,
