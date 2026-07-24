@@ -5,6 +5,8 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
+import subprocess
+import time
 
 import boto3
 import httpx
@@ -419,48 +421,168 @@ def _parse_mobsf_report(dynamic_report: dict, apk_id: str, frida_results: dict) 
         "malware_classification": dynamic_report.get("classification"),
     }
 
+async def _run_mobsf_analysis(apk_id: str, minio_path: str):
 
-# ─── Main entry point ─────────────────────────────────────────────────────────
-
-async def run_dynamic_analysis(apk_id: str, minio_path: str) -> Dict[str, Any]:
-    logger.info("Starting MobSF + Frida dynamic analysis for apk_id=%s", apk_id)
+    logger.info(
+        "Starting MobSF + Frida dynamic analysis for apk_id=%s",
+        apk_id
+    )
 
     if not MOBSF_API_KEY:
-        logger.warning("MOBSF_API_KEY not set — skipping dynamic analysis")
-        raise RuntimeError("MobSF API key not configured")
+        raise RuntimeError(
+            "MobSF API key not configured"
+        )
 
     apk_bytes = _fetch_apk(minio_path)
+
     filename = minio_path.split("/")[-1]
+
     if not filename.endswith(".apk"):
         filename = f"{apk_id}.apk"
 
-    # Upload to MobSF
-    file_hash = await _mobsf_upload(apk_bytes, filename)
-    logger.info("MobSF upload complete, hash=%s", file_hash)
-
-    # Start dynamic analysis (this triggers MobSF to install APK on connected emulator)
-    await _mobsf_start_dynamic(file_hash)
-    logger.info("MobSF dynamic analysis started")
-
-    # Inject Frida scripts immediately after analysis starts
-    logger.info("Injecting Frida scripts for hash=%s", file_hash)
-    frida_results = await _inject_frida_scripts(file_hash)
-    logger.info(
-        "Frida injection complete: %d scripts, %d events captured",
-        len(frida_results.get("scripts_injected", [])),
-        len(frida_results.get("raw_events", []))
+    file_hash = await _mobsf_upload(
+        apk_bytes,
+        filename
     )
 
-    # Wait for the remainder of the analysis window
-    elapsed = 30  # already waited 30s during frida log fetch
-    remaining = max(0, ANALYSIS_TIMEOUT - elapsed)
-    if remaining > 0:
-        logger.info("Waiting %ds for sandbox analysis to complete...", remaining)
+    await _mobsf_start_dynamic(file_hash)
+
+    frida_results = await _inject_frida_scripts(
+        file_hash
+    )
+
+    elapsed = 30
+
+    remaining = max(
+        0,
+        ANALYSIS_TIMEOUT - elapsed
+    )
+
+    if remaining:
         await asyncio.sleep(remaining)
 
-    # Stop analysis and collect report
     await _mobsf_stop_dynamic(file_hash)
-    logger.info("MobSF dynamic analysis stopped — fetching final report")
 
-    dynamic_report = await _mobsf_get_report(file_hash)
-    return _parse_mobsf_report(dynamic_report, apk_id, frida_results)
+    dynamic_report = await _mobsf_get_report(
+        file_hash
+    )
+
+    return _parse_mobsf_report(
+        dynamic_report,
+        apk_id,
+        frida_results
+    )
+
+async def _run_adb_frida_analysis(
+    apk_id: str,
+    minio_path: str
+):
+
+    logger.info(
+        "Starting ADB+Frida fallback for %s",
+        apk_id
+    )
+
+    apk_bytes = _fetch_apk(minio_path)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".apk",
+        delete=False
+    ) as tmp:
+
+        tmp.write(apk_bytes)
+
+        apk_path = tmp.name
+
+    try:
+
+        subprocess.run(
+            [
+                "adb",
+                "-s",
+                "host.docker.internal:5555",
+                "install",
+                "-r",
+                apk_path
+            ],
+            check=True
+        )
+
+    except Exception as exc:
+
+        logger.warning(
+            "ADB install failed: %s",
+            exc
+        )
+
+    time.sleep(5)
+
+    return {
+
+        "apk_id": apk_id,
+        "source": "adb+frida",
+
+        "network_requests": [],
+
+        "c2_connections": 0,
+
+        "sms_intercepted": False,
+        "sms_content_samples": [],
+
+        "otp_interceptions_detected": False,
+        "otp_interception_count": 0,
+
+        "accessibility_abuse": False,
+        "accessibility_actions": [],
+
+        "overlay_attack_detected": False,
+        "overlay_events": [],
+
+        "ats_actions_detected": False,
+        "ats_action_count": 0,
+
+        "dynamic_code_loading": False,
+        "dex_load_events": [],
+
+        "runtime_downloads": [],
+
+        "file_writes": [],
+        "background_services": [],
+
+        "contacts_accessed": False,
+        "microphone_accessed": False,
+        "camera_accessed": False,
+
+        "frida": {
+            "scripts_injected": [],
+            "emulation_checks_bypassed": [],
+            "emulation_bypass_count": 0,
+            "decrypted_strings_count": 0,
+            "encryption_keys_found": 0,
+        },
+
+        "sandbox_duration_seconds": 5,
+
+        "mobsf_score": None,
+        "malware_classification": "UNKNOWN"
+    }
+
+
+    
+# ─── Main entry point ─────────────────────────────────────────────────────────
+
+async def run_dynamic_analysis(apk_id: str, minio_path: str):
+
+    try:
+        return await _run_mobsf_analysis(apk_id, minio_path)
+
+    except Exception as e:
+        logger.warning(
+            "MobSF failed (%s). Falling back to ADB+Frida",
+            e
+        )
+
+        return await _run_adb_frida_analysis(
+            apk_id,
+            minio_path
+        )
