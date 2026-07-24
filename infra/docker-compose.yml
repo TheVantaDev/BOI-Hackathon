@@ -54,6 +54,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+
   backend:
     build:
       context: ../apps/backend
@@ -86,6 +87,8 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      VITE_API_URL: http://backend:8000
     volumes:
       - ../apps/frontend/src:/app/src
       - ../apps/frontend/index.html:/app/index.html
@@ -114,9 +117,9 @@ services:
       - "8008:8000"
     environment:
       MOBSF_API_KEY: ${MOBSF_API_KEY:-sentinel_mobsf_key}
+      MOBSF_ANALYZER_IDENTIFIER: host.docker.internal:5555
       # No volume mount — avoids Linux permission issues on Docker Desktop for Windows.
       # MobSF stores data inside the container (fine for dev/demo use).
-      # For dynamic analysis: start AVD in Android Studio, run adb tcpip 5555
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -127,9 +130,9 @@ services:
     ports:
       - "8011:8011"
     environment:
-      MOBSF_URL: http://mobsf:8008
+      MOBSF_URL: http://mobsf:8000
       MOBSF_API_KEY: ${MOBSF_API_KEY:-sentinel_mobsf_key}
-      MOBSF_TIMEOUT: "300"
+      MOBSF_TIMEOUT: "60"
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: sentinel_minio
       MINIO_SECRET_KEY: sentinel_minio_pass

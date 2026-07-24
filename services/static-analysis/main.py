@@ -66,31 +66,70 @@ def _upload_to_minio(minio_path: str, data: bytes, content_type: str = "applicat
 
 
 def _run_analysis(tmp_path: str, apk_id: str):
+    """Run Androguard static analysis only — fast, returns immediately."""
     result = analyze_apk(tmp_path, RULES_DIR)
     result["apk_id"] = apk_id
-
-    decompiled_info = {}
-    try:
-        decomp_res, temp_dir = decompile_apk(tmp_path, apk_id)
-
-        if "apktool_zip" in decomp_res:
-            apktool_minio_key = f"{apk_id}/decompiled_apktool.zip"
-            with open(decomp_res["apktool_zip"], "rb") as f:
-                _upload_to_minio(f"apk-uploads/{apktool_minio_key}", f.read())
-            decompiled_info["apktool_path"] = f"apk-uploads/{apktool_minio_key}"
-
-        if "jadx_zip" in decomp_res:
-            jadx_minio_key = f"{apk_id}/decompiled_jadx.zip"
-            with open(decomp_res["jadx_zip"], "rb") as f:
-                _upload_to_minio(f"apk-uploads/{jadx_minio_key}", f.read())
-            decompiled_info["jadx_path"] = f"apk-uploads/{jadx_minio_key}"
-
-        shutil.rmtree(temp_dir, ignore_errors=True)
-    except Exception as decomp_exc:
-        logger.exception("Decompilation pipeline failed: %s", decomp_exc)
-
-    result["decompiled"] = decompiled_info
+    result["decompiled"] = {}  # will be filled by background decompilation
     return result
+
+
+def _run_decompilation_background(tmp_path: str, apk_id: str):
+    """
+    Run APKTool + JADX decompilation in a background thread.
+    This is intentionally separated from _run_analysis so that:
+    - OOM crashes from JADX don't kill the analysis response
+    - Large APKs don't block the pipeline for minutes
+    - Score calculation always gets static features even if decompilation fails
+    """
+    import threading
+    logger.info("[bg-decompile] Starting background decompilation for apk_id=%s", apk_id)
+
+    def _worker():
+        try:
+            decomp_res, temp_dir = decompile_apk(tmp_path, apk_id)
+            decompiled_info = {}
+
+            if "apktool_zip" in decomp_res:
+                apktool_minio_key = f"{apk_id}/decompiled_apktool.zip"
+                with open(decomp_res["apktool_zip"], "rb") as f:
+                    _upload_to_minio(f"apk-uploads/{apktool_minio_key}", f.read())
+                decompiled_info["apktool_path"] = f"apk-uploads/{apktool_minio_key}"
+                logger.info("[bg-decompile] APKTool zip uploaded for apk_id=%s", apk_id)
+
+            if "jadx_zip" in decomp_res:
+                jadx_minio_key = f"{apk_id}/decompiled_jadx.zip"
+                with open(decomp_res["jadx_zip"], "rb") as f:
+                    _upload_to_minio(f"apk-uploads/{jadx_minio_key}", f.read())
+                decompiled_info["jadx_path"] = f"apk-uploads/{jadx_minio_key}"
+                logger.info("[bg-decompile] JADX zip uploaded for apk_id=%s", apk_id)
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+            # Update the backend DB via internal API so decompiled paths are saved
+            try:
+                import urllib.request, json as _json
+                payload = _json.dumps({"apk_id": apk_id, "decompiled": decompiled_info}).encode()
+                req = urllib.request.Request(
+                    f"http://backend:8000/api/analysis/{apk_id}/decompiled",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="PATCH",
+                )
+                urllib.request.urlopen(req, timeout=10)
+            except Exception as patch_exc:
+                logger.warning("[bg-decompile] Could not patch decompiled paths: %s", patch_exc)
+
+            logger.info("[bg-decompile] Decompilation complete for apk_id=%s", apk_id)
+        except Exception as exc:
+            logger.exception("[bg-decompile] Failed for apk_id=%s: %s", apk_id, exc)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 @app.post("/analyze")
@@ -106,17 +145,23 @@ async def analyze(ref: APKRef):
         tmp_path = tmp.name
 
     try:
+        # Step 1: Run fast Androguard analysis — this is what the pipeline needs for scoring
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _run_analysis, tmp_path, ref.apk_id)
+
+        # Step 2: Kick off decompilation in the background (APKTool + JADX)
+        # This does NOT block the response — decompiled source appears in the UI
+        # once the background task completes (usually 1-3 min for large APKs)
+        _run_decompilation_background(tmp_path, ref.apk_id)
+
         return result
     except Exception as exc:
         logger.exception("Analysis failed for %s: %s", ref.apk_id, exc)
-        return _stub_result(ref.apk_id)
-    finally:
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
+        return _stub_result(ref.apk_id)
 
 
 def _stub_result(apk_id: str) -> dict:

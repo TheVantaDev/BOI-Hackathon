@@ -1,11 +1,17 @@
 from datetime import datetime
+from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
 from models.apk import APKUpload, AnalysisResult, RiskReport, ThreatIndicator
 from services.db import get_db
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 router = APIRouter()
 
@@ -408,8 +414,8 @@ def _persist_report(db: Session, apk_id: str, compiled: dict) -> RiskReport:
     return report
 
 
-@router.get("/{apk_id}")
-def get_report(apk_id: str, db: Session = Depends(get_db)):
+def _load_report_inputs(apk_id: str, db: Session):
+    """Shared DB load for JSON report + PDF — same source of truth."""
     apk = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
     if not apk:
         raise HTTPException(status_code=404, detail="APK not found")
@@ -420,6 +426,13 @@ def get_report(apk_id: str, db: Session = Depends(get_db)):
 
     if apk.status in ("pending", "processing") and not analysis:
         raise HTTPException(status_code=202, detail="Analysis still in progress")
+
+    return apk, analysis, existing_report, indicators
+
+
+@router.get("/{apk_id}")
+def get_report(apk_id: str, db: Session = Depends(get_db)):
+    apk, analysis, existing_report, indicators = _load_report_inputs(apk_id, db)
 
     if existing_report and apk.status == "completed":
         compiled = _compile_report(apk, analysis, indicators, existing_report)
@@ -460,9 +473,35 @@ def get_report_summary(apk_id: str, db: Session = Depends(get_db)):
     }
 
 
+def _render_report_html(compiled: dict) -> str:
+    """Fill templates/report.html with the compiled report dict."""
+    env = Environment(
+        loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    return env.get_template("report.html").render(report=compiled)
+
+
+def _html_to_pdf(html: str) -> bytes:
+    """Convert HTML string to PDF bytes via WeasyPrint."""
+    # lazy import: native libs only needed when generating PDF (Docker has them)
+    from weasyprint import HTML
+
+    return HTML(string=html, base_url=str(_TEMPLATES_DIR)).write_pdf()
+
+
 @router.get("/{apk_id}/pdf")
 def download_pdf(apk_id: str, db: Session = Depends(get_db)):
-    report = db.query(RiskReport).filter(RiskReport.apk_id == apk_id).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    return {"message": "PDF generation not yet implemented", "apk_id": apk_id}
+    apk, analysis, existing_report, indicators = _load_report_inputs(apk_id, db)
+    compiled = _compile_report(apk, analysis, indicators, existing_report)
+
+    html = _render_report_html(compiled)
+    pdf_bytes = _html_to_pdf(html)
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="report-{apk_id}.pdf"'
+        },
+    )

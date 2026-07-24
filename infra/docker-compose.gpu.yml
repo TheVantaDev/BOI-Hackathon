@@ -1,0 +1,22 @@
+# GPU Override for Ollama
+# Use this ONLY on machines with an NVIDIA GPU.
+#
+# How to use:
+#   GPU machine:     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#   Non-GPU machine: docker compose -f docker-compose.yml up -d
+#
+# Requirements:
+#   - NVIDIA GPU with CUDA support
+#   - NVIDIA drivers installed on host
+#   - Docker Desktop with GPU enabled (Settings -> Resources -> Enable GPU)
+#   - WSL2 backend (default on Windows)
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

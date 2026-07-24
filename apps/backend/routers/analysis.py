@@ -114,6 +114,32 @@ def get_analysis(apk_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.patch("/{apk_id}/decompiled")
+def patch_decompiled(apk_id: str, payload: dict, db: Session = Depends(get_db)):
+    """
+    Called by the static-analysis background decompilation worker once APKTool/JADX
+    finish uploading their zips to MinIO. Patches the decompiled paths into the
+    existing static_analysis JSON so the frontend can browse source code.
+    """
+    result = db.query(AnalysisResult).filter(AnalysisResult.apk_id == apk_id).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+
+    decompiled = payload.get("decompiled", {})
+    if not decompiled:
+        return {"status": "no-op", "detail": "No decompiled paths provided"}
+
+    current = dict(result.static_analysis or {})
+    current["decompiled"] = decompiled
+    result.static_analysis = current
+    db.commit()
+
+    logger.info("Patched decompiled paths for apk_id=%s: %s", apk_id, list(decompiled.keys()))
+    return {"status": "ok", "apk_id": apk_id, "decompiled_keys": list(decompiled.keys())}
+
+
+
+
 @router.get("/{apk_id}/status")
 def get_status(apk_id: str, db: Session = Depends(get_db)):
     apk = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
