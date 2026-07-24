@@ -1,6 +1,8 @@
 import logging
 import os
+import time
 from typing import Any, Dict, List
+import ipaddress
 
 import httpx
 
@@ -35,30 +37,34 @@ KNOWN_MALICIOUS_IPS = {
     "91.108.56.178", "194.61.24.102", "31.184.198.23", "5.188.86.172",
 }
 
-# In-memory OpenPhish cache so we don't fetch it on every request
+# In-memory OpenPhish cache with TTL so stale phishing domains get refreshed
 _openphish_cache: set = set()
-_openphish_loaded: bool = False
+_openphish_loaded_at: float = 0.0
+OPENPHISH_TTL_SECONDS = 6 * 3600  # refresh every 6 hours
 
 
 async def _load_openphish_feed():
-    global _openphish_cache, _openphish_loaded
-    if _openphish_loaded:
-        return
+    """Load (or refresh) the OpenPhish feed. Re-fetches after OPENPHISH_TTL_SECONDS."""
+    global _openphish_cache, _openphish_loaded_at
+    now = time.time()
+    if now - _openphish_loaded_at < OPENPHISH_TTL_SECONDS:
+        return  # Cache still fresh
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(OPENPHISH_FEED_URL)
             if resp.status_code == 200:
-                lines = resp.text.strip().split("\n")
-                for line in lines:
+                new_cache: set = set()
+                for line in resp.text.strip().split("\n"):
                     line = line.strip()
                     if line.startswith("http"):
                         try:
                             domain = line.split("/")[2].lower()
-                            _openphish_cache.add(domain)
+                            new_cache.add(domain)
                         except Exception:
                             pass
-                _openphish_loaded = True
-                logger.info("OpenPhish feed loaded: %d domains", len(_openphish_cache))
+                _openphish_cache = new_cache
+                _openphish_loaded_at = now
+                logger.info("OpenPhish feed refreshed: %d domains", len(_openphish_cache))
     except Exception as exc:
         logger.warning("OpenPhish feed fetch failed: %s", exc)
 
@@ -149,8 +155,36 @@ async def check_domain(domain: str) -> Dict:
     }
 
 
+def _is_public_ip(ip: str) -> bool:
+    """Return True only for globally routable IPs — skip private/loopback/reserved ranges."""
+    try:
+        addr = ipaddress.ip_address(ip)
+        return (
+            not addr.is_private
+            and not addr.is_loopback
+            and not addr.is_link_local
+            and not addr.is_multicast
+            and not addr.is_reserved
+            and not addr.is_unspecified
+        )
+    except ValueError:
+        return False  # Not a valid IP at all
+
+
 async def check_ip(ip: str) -> Dict:
     ip = ip.strip()
+
+    # Skip private/loopback/reserved IPs — they are never IOCs and would waste
+    # AbuseIPDB credits. Also avoids false positives from 127.0.0.1, 0.0.0.0, etc.
+    if not _is_public_ip(ip):
+        return {
+            "indicator": ip,
+            "type": "ip",
+            "malicious": False,
+            "abuse_score": 0,
+            "source": "skipped_private",
+        }
+
     is_known = ip in KNOWN_MALICIOUS_IPS
     abuse_score = 0
     sources = []
@@ -233,6 +267,44 @@ async def check_urls_batch(urls: List[str]) -> List[Dict]:
         result = await check_url_urlhaus(url)
         results.append(result)
     return results
+
+
+def _mitre_from_ioc_findings(
+    malicious_domains: List[str],
+    malicious_ips: List[str],
+    malicious_hashes: List[str],
+    malicious_urls: List[str],
+) -> List[Dict]:
+    """
+    Map threat intel IOC findings to MITRE ATT&CK techniques.
+    Called from threat-intel/main.py after IOC lookup completes.
+
+    Previous bug: main.py built a fake static_context with domain strings as
+    'permission names' and passed them to map_to_mitre() which only knows
+    Android permission names — the lookup always returned nothing.
+    """
+    techniques: dict = {}
+
+    def _add(tech_id: str, name: str, tactic: str) -> None:
+        if tech_id not in techniques:
+            techniques[tech_id] = {"id": tech_id, "name": name, "tactic": tactic}
+
+    if malicious_domains or malicious_urls:
+        _add("T1583.001", "Acquire Infrastructure: Domains", "Resource Development")
+        _add("T1071.001", "Application Layer Protocol: Web Protocols", "Command and Control")
+
+    if malicious_ips:
+        _add("T1071.001", "Application Layer Protocol: Web Protocols", "Command and Control")
+        _add("T1095",     "Non-Application Layer Protocol", "Command and Control")
+
+    if malicious_hashes:
+        _add("T1436",     "Commonly Used Port", "Command and Control")
+
+    if malicious_urls:
+        # URLs in threat feeds are typically C2 drop zones or phishing pages
+        _add("T1566.002", "Phishing: Spearphishing Link", "Initial Access")
+
+    return list(techniques.values())
 
 
 def map_to_mitre(static_data: Dict) -> List[Dict]:

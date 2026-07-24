@@ -197,7 +197,12 @@ def get_decompiled_file(
         raise HTTPException(status_code=404, detail=f"Decompiled files for tool '{tool}' not found")
         
     local_zip = get_cached_zip(apk_id, tool, zip_path_minio)
-    
+
+    # Sanitize path to prevent ZIP path traversal attacks.
+    # A crafted path like '../../../etc/passwd' could escape the archive.
+    if path.startswith("/") or ".." in path.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
     try:
         with zipfile.ZipFile(local_zip, 'r') as z:
             if path not in z.namelist():

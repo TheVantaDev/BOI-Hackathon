@@ -150,20 +150,52 @@ def _build_static_findings(static: dict) -> dict:
 
 
 def _build_dynamic_findings(dynamic: dict) -> dict:
+    # NOTE: Field names here MUST match what dynamic-analysis/sandbox.py returns.
+    # Previous bug: used sms_interception / overlay_attacks / network_connections
+    # which don't exist — dynamic service returns the names below.
+    sms = _safe_get(dynamic, "sms_intercepted", default=False)
+    otp = _safe_get(dynamic, "otp_interceptions_detected", default=False)
+    overlay = _safe_get(dynamic, "overlay_attack_detected", default=False)
+    ats = _safe_get(dynamic, "ats_actions_detected", default=False)
+    network_reqs = _safe_get(dynamic, "network_requests", default=[])
+    frida = _safe_get(dynamic, "frida", default={})
+    # Derive keylogging / screen_capture from Frida ATS events
+    ats_count = _safe_get(dynamic, "ats_action_count", default=0)
+    screenshot = any(
+        e.get("type") == "screenshot_taken"
+        for e in _safe_get(dynamic, "overlay_events", default=[])
+    )
     return {
-        "sms_interception": _safe_get(dynamic, "sms_interception", default=False),
+        # Primary behavioral flags
+        "sms_interception": sms or otp,
+        "otp_interceptions_detected": otp,
+        "otp_interception_count": _safe_get(dynamic, "otp_interception_count", default=0),
         "accessibility_abuse": _safe_get(dynamic, "accessibility_abuse", default=False),
-        "overlay_attacks": _safe_get(dynamic, "overlay_attacks", default=False),
-        "keylogging": _safe_get(dynamic, "keylogging", default=False),
-        "screen_capture": _safe_get(dynamic, "screen_capture", default=False),
-        "device_admin_abuse": _safe_get(dynamic, "device_admin_abuse", default=False),
-        "network_connections": _safe_get(dynamic, "network_connections", default=[]),
-        "dns_queries": _safe_get(dynamic, "dns_queries", default=[]),
-        "file_operations": _safe_get(dynamic, "file_operations", default=[]),
-        "crypto_operations": _safe_get(dynamic, "crypto_operations", default=[]),
-        "data_exfiltration": _safe_get(dynamic, "data_exfiltration"),
-        "c2_communication": _safe_get(dynamic, "c2_communication"),
-        "behavioral_summary": _safe_get(dynamic, "summary"),
+        "overlay_attacks": overlay,
+        "keylogging": ats and ats_count > 0,
+        "screen_capture": screenshot,
+        "device_admin_abuse": False,  # not yet detected by dynamic service
+        # Network
+        "network_connections": network_reqs,
+        "c2_connections": _safe_get(dynamic, "c2_connections", default=0),
+        "c2_plaintext_captured": _safe_get(dynamic, "c2_plaintext_captured", default=[]),
+        "runtime_downloads": _safe_get(dynamic, "runtime_downloads", default=[]),
+        # Code loading
+        "dynamic_code_loading": _safe_get(dynamic, "dynamic_code_loading", default=False),
+        "dex_load_events": _safe_get(dynamic, "dex_load_events", default=[]),
+        # File / device
+        "file_operations": _safe_get(dynamic, "file_writes", default=[]),
+        "dns_queries": [],
+        "data_exfiltration": bool(sms or otp or overlay),
+        "c2_communication": bool(_safe_get(dynamic, "c2_connections", default=0)),
+        "behavioral_summary": _safe_get(dynamic, "malware_classification"),
+        # Frida metadata
+        "frida_scripts_injected": _safe_get(frida, "scripts_injected", default=[]),
+        "emulation_bypass_count": _safe_get(frida, "emulation_bypass_count", default=0),
+        "decrypted_strings_count": _safe_get(frida, "decrypted_strings_count", default=0),
+        # Source
+        "analysis_source": _safe_get(dynamic, "source", default="unknown"),
+        "sandbox_duration_seconds": _safe_get(dynamic, "sandbox_duration_seconds", default=0),
     }
 
 
@@ -396,6 +428,13 @@ def _compile_report(
 
 
 def _persist_report(db: Session, apk_id: str, compiled: dict) -> RiskReport:
+    # Guard against race condition: two concurrent GET requests both seeing
+    # existing_report=None and both trying to insert. Check again inside the
+    # same transaction before inserting.
+    existing = db.query(RiskReport).filter(RiskReport.apk_id == apk_id).first()
+    if existing:
+        return existing
+
     report = RiskReport(
         apk_id=apk_id,
         risk_score=compiled["risk_assessment"].get("risk_score"),
@@ -409,8 +448,13 @@ def _persist_report(db: Session, apk_id: str, compiled: dict) -> RiskReport:
         shap_explanations=compiled["shap_explainability"],
     )
     db.add(report)
-    db.commit()
-    db.refresh(report)
+    try:
+        db.commit()
+        db.refresh(report)
+    except Exception:
+        db.rollback()
+        # Another request beat us to it — just return what's there now
+        report = db.query(RiskReport).filter(RiskReport.apk_id == apk_id).first()
     return report
 
 

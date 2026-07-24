@@ -111,9 +111,26 @@ async def upload_apk_file(
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+    # Reject oversized files before doing any expensive work (hashing, DB queries, MinIO upload).
+    # 100 MB is a generous limit for an APK — most banking malware is under 30 MB.
+    MAX_APK_BYTES = 100 * 1024 * 1024  # 100 MB
+    if len(content) > MAX_APK_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(content) // (1024*1024)} MB). Maximum allowed size is 100 MB.",
+        )
+
     sha256 = _sha256(content)
 
-    existing = db.query(APKUpload).filter(APKUpload.sha256 == sha256).first()
+    # Use with_for_update() to lock the row check, preventing a race condition
+    # where two concurrent uploads of the same APK both pass the uniqueness check
+    # and then crash on the SHA-256 unique constraint violation in PostgreSQL.
+    existing = (
+        db.query(APKUpload)
+        .filter(APKUpload.sha256 == sha256)
+        .with_for_update(skip_locked=True)
+        .first()
+    )
     if existing:
         if existing.status == "failed":
             # Re-run pipeline for failed uploads

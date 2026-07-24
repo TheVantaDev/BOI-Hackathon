@@ -59,6 +59,7 @@ function hookOkHttp3() {
 function bypassTrustManager() {
     try {
         var X509TrustManager = Java.use("javax.net.ssl.X509TrustManager");
+        var HostnameVerifier  = Java.use("javax.net.ssl.HostnameVerifier");
         var SSLContext = Java.use("javax.net.ssl.SSLContext");
 
         var TrustManager = Java.registerClass({
@@ -71,16 +72,28 @@ function bypassTrustManager() {
             }
         });
 
+        // NOTE: HostnameVerifier is a Java interface — you cannot call $new() on it.
+        // We must register a class that implements it.
+        var AllowAllHostnameVerifier = Java.registerClass({
+            name: "com.sentinel.bypass.AllowAllHostnameVerifier",
+            implements: [HostnameVerifier],
+            methods: {
+                verify: function (hostname, session) { return true; }
+            }
+        });
+
         var TrustManagers = [TrustManager.$new()];
         var SSLContextInstance = SSLContext.getInstance("TLS");
         SSLContextInstance.init(null, TrustManagers, null);
 
-        var SSLSocketFactory = Java.use("javax.net.ssl.HttpsURLConnection");
-        SSLSocketFactory.setDefaultSSLSocketFactory(SSLContextInstance.getSocketFactory());
-        SSLSocketFactory.setDefaultHostnameVerifier(Java.use("javax.net.ssl.HostnameVerifier").$new());
+        var HttpsURLConnection = Java.use("javax.net.ssl.HttpsURLConnection");
+        HttpsURLConnection.setDefaultSSLSocketFactory(SSLContextInstance.getSocketFactory());
+        HttpsURLConnection.setDefaultHostnameVerifier(AllowAllHostnameVerifier.$new());
 
-        send(JSON.stringify({ type: "ssl_bypass", status: "TrustManager bypassed" }));
-    } catch (e) {}
+        send(JSON.stringify({ type: "ssl_bypass", status: "TrustManager + HostnameVerifier bypassed" }));
+    } catch (e) {
+        send(JSON.stringify({ type: "error", script: "ssl_bypass", error: "bypassTrustManager: " + e }));
+    }
 }
 
 // ─── CertificatePinner Bypass (OkHttp pinning) ────────────────────────────

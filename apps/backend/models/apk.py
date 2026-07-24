@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Any
 
 from sqlalchemy import Column, String, Float, Text, DateTime, BigInteger, ForeignKey
@@ -17,7 +17,7 @@ class APKUpload(Base):
     filename = Column(String(255), nullable=False)
     sha256 = Column(String(64), unique=True, nullable=False)
     file_size = Column(BigInteger)
-    upload_time = Column(DateTime, default=datetime.utcnow)
+    upload_time = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     status = Column(String(50), default="pending")
     minio_path = Column(String(500))
 
@@ -34,7 +34,7 @@ class AnalysisResult(Base):
     dynamic_analysis = Column(JSONB)
     threat_intel = Column(JSONB)
     ai_summary = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     apk = relationship("APKUpload", back_populates="analysis")
 
@@ -53,7 +53,7 @@ class RiskReport(Base):
     recommendations = Column(JSONB)
     mitre_mappings = Column(JSONB)
     shap_explanations = Column(JSONB)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     apk = relationship("APKUpload", back_populates="report")
 
@@ -68,7 +68,7 @@ class ThreatIndicator(Base):
     source = Column(String(100))
     severity = Column(String(50))
     mitre_technique = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 # Pydantic schemas

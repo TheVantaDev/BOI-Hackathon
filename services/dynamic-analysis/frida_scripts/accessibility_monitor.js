@@ -45,7 +45,10 @@ function hookOnAccessibilityEvent() {
                 if (source !== null) {
                     try {
                         var text = source.getText();
-                        if (text !== null && text.toString().length() > 0) {
+                        // NOTE: text.toString() returns a JS string — use .length (property),
+                        // NOT .length() (method). Calling .length() throws a silent TypeError
+                        // which is swallowed by the outer catch, disabling this entire block.
+                        if (text !== null && text.toString().length > 0) {
                             var textStr = text.toString().toLowerCase();
                             var isSensitive = BANKING_KEYWORDS.some(function(kw) {
                                 return textStr.includes(kw);

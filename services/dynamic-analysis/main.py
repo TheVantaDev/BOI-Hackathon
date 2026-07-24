@@ -18,7 +18,7 @@ class APKRef(BaseModel):
 @app.post("/analyze")
 async def analyze(ref: APKRef):
     try:
-        result = await run_dynamic_analysis(ref.apk_id, ref.minio_path)
+        result = await run_dynamic_analysis(ref.apk_id, ref.minio_path, sha256=ref.sha256)
         return result
     except RuntimeError as exc:
         logger.warning("Dynamic analysis skipped: %s", exc)

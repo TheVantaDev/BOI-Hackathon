@@ -1,4 +1,5 @@
 import logging
+import ipaddress
 import re
 import shutil
 import subprocess
@@ -112,16 +113,34 @@ def detect_dynamic_code_loading(dx) -> bool:
     return False
 
 
+def _is_public_ip(ip_str: str) -> bool:
+    """Return True only for globally routable IPs, filter out private/loopback/reserved."""
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return (
+            not addr.is_private
+            and not addr.is_loopback
+            and not addr.is_link_local
+            and not addr.is_multicast
+            and not addr.is_reserved
+            and not addr.is_unspecified
+        )
+    except ValueError:
+        return False
+
+
 def extract_strings(a, d) -> Dict:
     urls, ips = [], []
     url_re = re.compile(r'https?://[^\s"\'<>]{8,}')
+    # Restrict to valid dotted-quad IPs; filter private ranges below
     ip_re = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
     try:
         for dex in d:
             for s in dex.get_strings():
                 text = str(s)
                 urls += url_re.findall(text)
-                ips += ip_re.findall(text)
+                # Only include publicly routable IPs — skip 127.x, 192.168.x, 0.0.0.0, etc.
+                ips += [ip for ip in ip_re.findall(text) if _is_public_ip(ip)]
     except Exception as exc:
         logger.warning("String extraction failed: %s", exc)
     return {

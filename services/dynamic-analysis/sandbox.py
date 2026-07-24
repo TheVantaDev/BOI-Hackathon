@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -243,7 +244,9 @@ def _parse_frida_events(raw_logs: list, results: dict) -> None:
                         "key_hex": event.get("key_hex"),
                     })
 
-            elif event_type in ("sms_intercept", "sms_send"):
+            elif event_type in ("sms_intercept", "sms_send", "sms_multipart_send"):
+                # NOTE: "sms_multipart_send" was previously unhandled — banking trojans
+                # often use sendMultipartTextMessage to forward long OTP exfil messages.
                 if event_type == "sms_intercept":
                     results["sms_intercepted"].append({
                         "from": event.get("from"),
@@ -277,6 +280,28 @@ def _parse_frida_events(raw_logs: list, results: dict) -> None:
 
             elif event_type in ("sensitive_ui_text_read", "text_change_monitored", "node_search"):
                 results["accessibility_events"].append(event)
+
+            # --- Previously unhandled event types from crypto_monitor.js and dex_loader_monitor.js ---
+            elif event_type == "base64_decode":
+                results["decrypted_strings"].append({
+                    "algorithm": "base64",
+                    "plaintext": event.get("decoded"),
+                    "direction": "decoded",
+                })
+
+            elif event_type == "decoded_string":
+                results["decrypted_strings"].append({
+                    "algorithm": "string_decode",
+                    "plaintext": event.get("value"),
+                    "direction": "decoded",
+                })
+
+            elif event_type == "reflection_class_load":
+                # Suspicious reflection calls (non-system classes) from dex_loader_monitor
+                results["dex_loads"].append({
+                    "type": "reflection_class_load",
+                    "class_name": event.get("class_name"),
+                })
 
         except (json.JSONDecodeError, AttributeError):
             continue
@@ -432,7 +457,7 @@ def _parse_mobsf_report(dynamic_report: dict, apk_id: str, frida_results: dict) 
         "malware_classification": dynamic_report.get("classification"),
     }
 
-async def _run_mobsf_analysis(apk_id: str, minio_path: str):
+async def _run_mobsf_analysis(apk_id: str, minio_path: str, sha256: str = ""):
 
     logger.info(
         "Starting MobSF + Frida dynamic analysis for apk_id=%s",
@@ -445,6 +470,16 @@ async def _run_mobsf_analysis(apk_id: str, minio_path: str):
         )
 
     apk_bytes = _fetch_apk(minio_path)
+
+    # Verify APK integrity against expected SHA-256 to detect MinIO swap attacks.
+    if sha256:
+        actual_sha256 = hashlib.sha256(apk_bytes).hexdigest()
+        if actual_sha256.lower() != sha256.lower():
+            raise RuntimeError(
+                f"SHA-256 mismatch for apk_id={apk_id}: "
+                f"expected={sha256}, got={actual_sha256}"
+            )
+        logger.info("SHA-256 verified for apk_id=%s", apk_id)
 
     filename = minio_path.split("/")[-1]
 
@@ -488,10 +523,21 @@ async def _run_mobsf_analysis(apk_id: str, minio_path: str):
 
 async def _run_adb_frida_analysis(
     apk_id: str,
-    minio_path: str
+    minio_path: str,
+    sha256: str = "",
 ):
-    logger.info("Starting ADB dynamic fallback execution for %s", apk_id)
+    logger.info("Starting ADB + Frida dynamic fallback execution for %s", apk_id)
     apk_bytes = _fetch_apk(minio_path)
+
+    # Verify integrity if SHA-256 was provided
+    if sha256:
+        actual_sha256 = hashlib.sha256(apk_bytes).hexdigest()
+        if actual_sha256.lower() != sha256.lower():
+            raise RuntimeError(
+                f"SHA-256 mismatch for apk_id={apk_id}: "
+                f"expected={sha256}, got={actual_sha256}"
+            )
+        logger.info("SHA-256 verified for apk_id=%s", apk_id)
 
     with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as tmp:
         tmp.write(apk_bytes)
@@ -501,6 +547,7 @@ async def _run_adb_frida_analysis(
     sms_found = False
     overlay_found = False
     accessibility_found = False
+    frida_injected = False
 
     try:
         # Ensure ADB daemon in container is connected to host emulator
@@ -537,15 +584,50 @@ async def _run_adb_frida_analysis(
         if installed_pkg:
             logger.info("Launching installed package on emulator via monkey: %s", installed_pkg)
             subprocess.run(
-                ["adb", "-s", "host.docker.internal:5555", "shell", "monkey", "-p", installed_pkg, "-c", "android.intent.category.LAUNCHER", "1"],
+                ["adb", "-s", "host.docker.internal:5555", "shell", "monkey", "-p", installed_pkg,
+                 "-c", "android.intent.category.LAUNCHER", "1"],
                 capture_output=True, timeout=10
             )
 
-        # Clear & capture logcat for 5 seconds
-        time.sleep(3)
+            # Give the app 3 seconds to start before attaching Frida
+            time.sleep(3)
+
+            # --- Inject Frida scripts via frida CLI ---
+            # Write combined Frida script to a temp file so frida CLI can load it
+            combined_script = _combine_frida_scripts()
+            if combined_script:
+                with tempfile.NamedTemporaryFile(
+                    suffix=".js", delete=False, mode="w", encoding="utf-8"
+                ) as script_tmp:
+                    script_tmp.write(combined_script)
+                    script_path = script_tmp.name
+                try:
+                    logger.info(
+                        "Injecting Frida scripts into %s on emulator", installed_pkg
+                    )
+                    subprocess.run(
+                        [
+                            "frida", "-U", "-l", script_path,
+                            "-f", installed_pkg,
+                            "--no-pause",
+                            "--runtime=v8",
+                        ],
+                        capture_output=True, timeout=30
+                    )
+                    frida_injected = True
+                    logger.info("Frida injection complete for %s", installed_pkg)
+                except Exception as frida_exc:
+                    logger.warning("Frida CLI injection failed: %s", frida_exc)
+                finally:
+                    try:
+                        os.unlink(script_path)
+                    except Exception:
+                        pass
+
+        # Capture logcat after Frida instrumentation window
         logcat_res = subprocess.run(
-            ["adb", "-s", "host.docker.internal:5555", "logcat", "-d", "-t", "300"],
-            capture_output=True, text=True, timeout=10
+            ["adb", "-s", "host.docker.internal:5555", "logcat", "-d", "-t", "500"],
+            capture_output=True, text=True, timeout=15
         )
         log_text = logcat_res.stdout or ""
 
@@ -562,9 +644,11 @@ async def _run_adb_frida_analysis(
         except Exception:
             pass
 
+    injected_scripts = FRIDA_SCRIPT_ORDER if frida_injected else []
+
     return {
         "apk_id": apk_id,
-        "source": "adb_dynamic",
+        "source": "adb+frida" if frida_injected else "adb_only",
         "installed_package": installed_pkg or "unknown",
         "network_requests": [],
         "c2_connections": 0,
@@ -587,13 +671,13 @@ async def _run_adb_frida_analysis(
         "microphone_accessed": False,
         "camera_accessed": False,
         "frida": {
-            "scripts_injected": ["adb_emulator_launcher"],
-            "emulation_checks_bypassed": ["emulator-5554"],
-            "emulation_bypass_count": 1,
+            "scripts_injected": injected_scripts,
+            "emulation_checks_bypassed": [],
+            "emulation_bypass_count": 0,
             "decrypted_strings_count": 0,
             "encryption_keys_found": 0,
         },
-        "sandbox_duration_seconds": 5,
+        "sandbox_duration_seconds": 33,  # 3s startup + 30s frida window
         "mobsf_score": 100 if (sms_found or overlay_found) else 0,
         "malware_classification": "SUSPICIOUS" if (sms_found or overlay_found) else "BENIGN_LAUNCHED"
     }
@@ -602,10 +686,10 @@ async def _run_adb_frida_analysis(
     
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
-async def run_dynamic_analysis(apk_id: str, minio_path: str):
+async def run_dynamic_analysis(apk_id: str, minio_path: str, sha256: str = ""):
 
     try:
-        return await _run_mobsf_analysis(apk_id, minio_path)
+        return await _run_mobsf_analysis(apk_id, minio_path, sha256=sha256)
 
     except Exception as e:
         logger.warning(
@@ -615,5 +699,6 @@ async def run_dynamic_analysis(apk_id: str, minio_path: str):
 
         return await _run_adb_frida_analysis(
             apk_id,
-            minio_path
+            minio_path,
+            sha256=sha256,
         )

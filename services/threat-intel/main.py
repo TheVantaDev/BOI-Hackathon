@@ -38,12 +38,15 @@ async def lookup_iocs(payload: IOCPayload):
     all_indicators = list(domain_results) + list(ip_results) + list(hash_results) + url_results
     malicious = [i for i in all_indicators if i["malicious"]]
 
-    static_context = {
-        "permissions": [{"name": d["indicator"]} for d in domain_results if d["malicious"]],
-        "suspicious_apis": [],
-        "dynamic_code_loading": False,
-    }
-    mitre_techniques = map_to_mitre(static_context)
+    # Build MITRE mapping from actual threat intel findings.
+    # Previous bug: passed domain strings as permission names to map_to_mitre(),
+    # which only looks up Android permission/API names — always returned empty.
+    mitre_from_iocs = _mitre_from_ioc_findings(
+        malicious_domains=[i["indicator"] for i in domain_results if i["malicious"]],
+        malicious_ips=[i["indicator"] for i in ip_results if i["malicious"]],
+        malicious_hashes=[i["indicator"] for i in hash_results if i["malicious"]],
+        malicious_urls=[i["indicator"] for i in url_results if i["malicious"]],
+    )
 
     return {
         "indicators": all_indicators,
@@ -52,7 +55,7 @@ async def lookup_iocs(payload: IOCPayload):
         "malicious_ips": [i["indicator"] for i in ip_results if i["malicious"]],
         "malicious_hashes": [i["indicator"] for i in hash_results if i["malicious"]],
         "malicious_urls": [i["indicator"] for i in url_results if i["malicious"]],
-        "mitre_techniques": mitre_techniques,
+        "mitre_techniques": mitre_from_iocs,
         "sources_used": ["urlhaus", "openphish", "abuseipdb", "malwarebazaar", "local_blocklist"],
     }
 

@@ -29,20 +29,25 @@ function logDetection(check) {
 }
 
 // ─── Build class fields ────────────────────────────────────────────────────
+// NOTE: Frida Java wrappers expose static fields as FieldWrappers — you MUST
+// use `.value` to overwrite them. Object.defineProperty() silently does nothing
+// on Frida Java objects and the bypass would never activate.
 function patchBuildFields() {
     try {
         var Build = Java.use("android.os.Build");
 
-        Object.defineProperty(Build, "MODEL", { get: function() { logDetection("Build.MODEL"); return FAKE_MODEL; } });
-        Object.defineProperty(Build, "BRAND", { get: function() { logDetection("Build.BRAND"); return FAKE_BRAND; } });
-        Object.defineProperty(Build, "DEVICE", { get: function() { logDetection("Build.DEVICE"); return FAKE_DEVICE; } });
-        Object.defineProperty(Build, "PRODUCT", { get: function() { logDetection("Build.PRODUCT"); return FAKE_PRODUCT; } });
-        Object.defineProperty(Build, "HARDWARE", { get: function() { logDetection("Build.HARDWARE"); return FAKE_HARDWARE; } });
-        Object.defineProperty(Build, "MANUFACTURER", { get: function() { logDetection("Build.MANUFACTURER"); return FAKE_MANU; } });
-        Object.defineProperty(Build, "FINGERPRINT", { get: function() { logDetection("Build.FINGERPRINT"); return FAKE_FINGERPRINT; } });
-        Object.defineProperty(Build, "TAGS", { get: function() { return "release-keys"; } });
-        Object.defineProperty(Build, "TYPE", { get: function() { return "user"; } });
-    } catch (e) {}
+        Build.MODEL.value       = FAKE_MODEL;       logDetection("Build.MODEL");
+        Build.BRAND.value       = FAKE_BRAND;       logDetection("Build.BRAND");
+        Build.DEVICE.value      = FAKE_DEVICE;      logDetection("Build.DEVICE");
+        Build.PRODUCT.value     = FAKE_PRODUCT;     logDetection("Build.PRODUCT");
+        Build.HARDWARE.value    = FAKE_HARDWARE;    logDetection("Build.HARDWARE");
+        Build.MANUFACTURER.value = FAKE_MANU;       logDetection("Build.MANUFACTURER");
+        Build.FINGERPRINT.value = FAKE_FINGERPRINT; logDetection("Build.FINGERPRINT");
+        Build.TAGS.value        = "release-keys";
+        Build.TYPE.value        = "user";
+    } catch (e) {
+        send(JSON.stringify({ type: "error", script: "anti_emulation_bypass", error: "patchBuildFields: " + e }));
+    }
 }
 
 // ─── TelephonyManager — return real-looking device identifiers ────────────

@@ -48,8 +48,10 @@ def predict_score(features: np.ndarray) -> float:
 
         # model was trained with multi:softprob — output shape is (n_samples, n_classes)
         best_iteration = getattr(model, 'best_iteration', 0)
-        iteration_range = (0, best_iteration + 1) if best_iteration > 0 else (0, 0)
-        proba = model.predict(dmatrix, iteration_range=iteration_range)
+        kwargs = {}
+        if best_iteration > 0:
+            kwargs["iteration_range"] = (0, best_iteration + 1)
+        proba = model.predict(dmatrix, **kwargs)
         proba = np.array(proba).reshape(-1, len(CLASS_NAMES))
 
         # weighted sum: proba[0] @ severity_vec gives a continuous 0-100 risk score
@@ -72,8 +74,10 @@ def predict_class(features: np.ndarray) -> Dict:
 
         dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
         best_iteration = getattr(model, 'best_iteration', 0)
-        iteration_range = (0, best_iteration + 1) if best_iteration > 0 else (0, 0)
-        proba = model.predict(dmatrix, iteration_range=iteration_range)
+        kwargs = {}
+        if best_iteration > 0:
+            kwargs["iteration_range"] = (0, best_iteration + 1)
+        proba = model.predict(dmatrix, **kwargs)
         proba = np.array(proba).reshape(-1, len(CLASS_NAMES))[0]
 
         pred_idx = int(np.argmax(proba))
@@ -105,14 +109,23 @@ def explain_score(features: np.ndarray) -> List[Dict]:
         # Collapse every axis except the one matching len(FEATURE_NAMES)
         feat_axis = sv.shape.index(len(FEATURE_NAMES))
         other_axes = tuple(a for a in range(sv.ndim) if a != feat_axis)
-        mean_abs_shap = np.abs(sv).mean(axis=other_axes)
+
+        # Use absolute mean for magnitude, signed mean for direction.
+        # Previous bug: computed np.abs().mean() for both — direction was always
+        # "increases_risk" because abs values are never negative.
+        mean_abs_shap  = np.abs(sv).mean(axis=other_axes)   # magnitude
+        mean_sign_shap = sv.mean(axis=other_axes)            # direction (signed)
 
         return [
             {
                 "feature": FEATURE_NAMES[i],
                 "value": float(features[i]),
                 "shap_value": round(float(mean_abs_shap[i]), 4),
-                "direction": "increases_risk" if mean_abs_shap[i] > 0 else "neutral",
+                "direction": (
+                    "increases_risk" if mean_sign_shap[i] > 0
+                    else "decreases_risk" if mean_sign_shap[i] < 0
+                    else "neutral"
+                ),
             }
             for i in range(len(FEATURE_NAMES))
         ]

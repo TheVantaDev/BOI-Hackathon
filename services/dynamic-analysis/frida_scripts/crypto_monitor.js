@@ -32,6 +32,7 @@ function hookCipher() {
             try {
                 if (mode === 2) { // DECRYPT
                     var plaintext = Java.use("java.lang.String").$new(result, "UTF-8");
+                    // plaintext is a Frida Java String wrapper — .length() is the Java method, which is correct here.
                     if (plaintext.length() > 3) {
                         var entry = { algorithm: algorithm, plaintext: plaintext.substring(0, 500), direction: "decrypt" };
                         results.decrypted_strings.push(entry);
