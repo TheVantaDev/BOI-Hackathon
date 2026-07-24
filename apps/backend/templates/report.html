@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>APK Risk Report — {{ (report.apk_metadata or {}).filename or "Unknown" }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 22mm 16mm;
+      @bottom-center {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 8px;
+        color: #94a3b8;
+        font-family: DejaVu Sans, Liberation Sans, sans-serif;
+      }
+      @bottom-right {
+        content: "Sentinel · Confidential";
+        font-size: 8px;
+        color: #cbd5e1;
+        font-family: DejaVu Sans, Liberation Sans, sans-serif;
+      }
+    }
+
+    @page :first {
+      margin: 0;
+      @bottom-center { content: none; }
+      @bottom-right { content: none; }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: DejaVu Sans, Liberation Sans, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.55;
+      color: #0f172a;
+      background: #ffffff;
+      margin: 0;
+    }
+
+    /* ── Cover Page ───────────────────────────────────── */
+
+    .cover {
+      width: 210mm;
+      height: 297mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      background: linear-gradient(160deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      color: #ffffff;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cover::before {
+      content: "";
+      position: absolute;
+      top: -80px;
+      right: -120px;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(8,145,178,0.15) 0%, transparent 70%);
+    }
+
+    .cover::after {
+      content: "";
+      position: absolute;
+      bottom: -100px;
+      left: -100px;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(220,38,38,0.08) 0%, transparent 70%);
+    }
+
+    .cover-brand {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #0891b2;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-brand::after {
+      content: "";
+      display: block;
+      width: 60px;
+      height: 2px;
+      background: #0891b2;
+      margin: 14px auto 0;
+    }
+
+    .cover-title {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin: 12px 40px 8px;
+      max-width: 80%;
+      word-break: break-word;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-subtitle {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 40px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-score-ring {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 40px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .ring-critical { border: 5px solid #dc2626; box-shadow: 0 0 40px rgba(220,38,38,0.25); }
+    .ring-high { border: 5px solid #ea580c; box-shadow: 0 0 40px rgba(234,88,12,0.25); }
+    .ring-medium { border: 5px solid #ca8a04; box-shadow: 0 0 40px rgba(202,138,4,0.25); }
+    .ring-low { border: 5px solid #2563eb; box-shadow: 0 0 40px rgba(37,99,235,0.25); }
+    .ring-info { border: 5px solid #64748b; box-shadow: 0 0 40px rgba(100,116,139,0.2); }
+
+    .cover-score-number {
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .cover-score-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #94a3b8;
+      margin-top: 6px;
+    }
+
+    .cover-severity {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .cover-date {
+      font-size: 11px;
+      color: #64748b;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-meta-row {
+      display: flex;
+      gap: 30px;
+      margin-top: 30px;
+      font-size: 10px;
+      color: #64748b;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cover-meta-row span {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .cover-meta-row .label {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #475569;
+    }
+
+    .cover-meta-row .value {
+      color: #e2e8f0;
+      font-weight: 600;
+      font-family: DejaVu Sans Mono, Liberation Mono, monospace;
+      font-size: 9px;
+      word-break: break-all;
+      max-width: 300px;
+      text-align: center;
+    }
+
+    .cover-classification {
+      display: inline-block;
+      padding: 6px 20px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cls-critical { background: rgba(220,38,38,0.15); color: #fca5a5; border: 1px solid rgba(220,38,38,0.3); }
+    .cls-high { background: rgba(234,88,12,0.15); color: #fdba74; border: 1px solid rgba(234,88,12,0.3); }
+    .cls-medium { background: rgba(202,138,4,0.15); color: #fde68a; border: 1px solid rgba(202,138,4,0.3); }
+    .cls-low { background: rgba(37,99,235,0.15); color: #93c5fd; border: 1px solid rgba(37,99,235,0.3); }
+    .cls-info { background: rgba(100,116,139,0.15); color: #cbd5e1; border: 1px solid rgba(100,116,139,0.3); }
+
+    /* ── Typography ───────────────────────────────────── */
+
+    h1 {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0 0 4px 0;
+      color: #0f172a;
+    }
+
+    h2 {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 0 0 10px 0;
+      color: #0f172a;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #0891b2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h2 .sec-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: #0891b2;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    h3 {
+      font-size: 11px;
+      font-weight: 700;
+      margin: 14px 0 8px;
+      color: #334155;
+    }
+
+    .muted { color: #64748b; }
+    .mono { font-family: DejaVu Sans Mono, Liberation Mono, monospace; font-size: 9.5px; }
+    .break { word-break: break-all; }
+
+    /* ── Layout ───────────────────────────────────────── */
+
+    .page-content {
+      padding: 0;
+    }
+
+    .section {
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      page-break-inside: avoid;
+    }
+
+    .section.break-before { page-break-before: always; }
+    .section.allow-break { page-break-inside: auto; }
+
+    .grid-2 {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 10px 0;
+      margin: 0 -10px 16px -10px;
+    }
+
+    .grid-2 td {
+      width: 50%;
+      vertical-align: top;
+      padding: 0;
+    }
+
+    /* ── Badges & Pills ──────────────────────────────── */
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .sev-critical { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .sev-high { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+    .sev-medium { background: #fefce8; color: #ca8a04; border: 1px solid #fde68a; }
+    .sev-low { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+    .sev-info, .sev-unknown { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .pill-danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .pill-warn { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+    .pill-ok { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+    .pill-info { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+
+    .chip {
+      display: inline-block;
+      margin: 0 5px 5px 0;
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #dc2626;
+      font-family: DejaVu Sans Mono, Liberation Mono, monospace;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .chip-orange {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #ea580c;
+    }
+
+    .chip-blue {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #2563eb;
+    }
+
+    /* ── Score & Stats ────────────────────────────────── */
+
+    .hero {
+      display: flex;
+      gap: 20px;
+      align-items: stretch;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+    }
+
+    .score-box {
+      width: 100px;
+      flex-shrink: 0;
+      text-align: center;
+      padding: 12px 8px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+    }
+
+    .score-value {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+      margin: 4px 0;
+    }
+
+    .score-critical { color: #dc2626; }
+    .score-high { color: #ea580c; }
+    .score-medium { color: #ca8a04; }
+    .score-low { color: #2563eb; }
+    .score-info { color: #64748b; }
+
+    .score-label {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      font-weight: 700;
+    }
+
+    .hero-body { flex: 1; }
+    .intent {
+      font-size: 14px;
+      font-weight: 700;
+      color: #dc2626;
+      margin-bottom: 4px;
+    }
+
+    .stats { margin-top: 10px; }
+
+    .stat {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .stat-red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .stat-orange { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+    .stat-yellow { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
+    .stat-blue { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+    .stat-green { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+
+    /* ── Tables ───────────────────────────────────────── */
+
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+
+    table.data th {
+      text-align: left;
+      padding: 6px 8px;
+      background: #f1f5f9;
+      color: #475569;
+      font-weight: 700;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    table.data td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+
+    table.data tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.meta {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+
+    table.meta td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+
+    table.meta td:first-child {
+      font-weight: 700;
+      color: #475569;
+      width: 160px;
+      white-space: nowrap;
+    }
+
+    table.meta tr:last-child td { border-bottom: none; }
+
+    /* ── Row (key-value indicator) ────────────────────── */
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 10.5px;
+    }
+
+    .row:last-child { border-bottom: none; }
+    .flag-bad { color: #dc2626; font-weight: 700; }
+    .flag-ok { color: #16a34a; font-weight: 700; }
+
+    /* ── MITRE cards ──────────────────────────────────── */
+
+    .mitre {
+      margin-bottom: 7px;
+      padding: 9px 12px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+    }
+
+    .mitre .id { color: #dc2626; font-weight: 700; font-family: DejaVu Sans Mono, Liberation Mono, monospace; font-size: 10px; }
+    .mitre .tactic {
+      float: right;
+      font-size: 8px;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* ── Recommendations ──────────────────────────────── */
+
+    .rec {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 10.5px;
+      color: #334155;
+    }
+
+    .rec-num {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #2563eb;
+      font-size: 9px;
+      font-weight: 700;
+      text-align: center;
+      line-height: 16px;
+    }
+
+    /* ── Journey stages ───────────────────────────────── */
+
+    .journey-stage {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 10px;
+    }
+
+    .stage-num {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      background: #0891b2;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 800;
+      text-align: center;
+      line-height: 24px;
+    }
+
+    .stage-body { flex: 1; }
+
+    /* ── Probability bar ──────────────────────────────── */
+
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 10px;
+    }
+
+    .prob-label {
+      width: 100px;
+      text-align: right;
+      font-weight: 600;
+      color: #475569;
+      flex-shrink: 0;
+    }
+
+    .prob-bar-bg {
+      flex: 1;
+      height: 14px;
+      background: #f1f5f9;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .prob-bar {
+      height: 100%;
+      border-radius: 4px;
+      min-width: 2px;
+    }
+
+    .prob-val {
+      width: 42px;
+      text-align: right;
+      font-weight: 700;
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    /* ── SHAP table ───────────────────────────────────── */
+
+    .shap-bar-bg {
+      width: 100%;
+      height: 10px;
+      background: #f1f5f9;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .shap-bar {
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    .shap-positive { background: #dc2626; }
+    .shap-negative { background: #2563eb; }
+
+    /* ── Misc ─────────────────────────────────────────── */
+
+    .summary-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #334155;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      font-size: 10px;
+    }
+
+    .empty { color: #94a3b8; font-style: italic; }
+
+    .footer-meta {
+      margin-top: 6px;
+      font-size: 8px;
+      color: #94a3b8;
+    }
+
+    .toc {
+      padding: 16px 20px;
+    }
+
+    .toc-title {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 14px;
+      color: #0f172a;
+    }
+
+    .toc-item {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 5px 0;
+      border-bottom: 1px dotted #e2e8f0;
+      font-size: 10.5px;
+      color: #334155;
+    }
+
+    .toc-num {
+      width: 20px;
+      flex-shrink: 0;
+      font-weight: 700;
+      color: #0891b2;
+    }
+
+    .component-list {
+      margin: 0;
+      padding: 0 0 0 14px;
+      font-size: 9.5px;
+      font-family: DejaVu Sans Mono, Liberation Mono, monospace;
+      color: #475569;
+    }
+
+    .component-list li {
+      margin-bottom: 3px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  {% set meta = report.apk_metadata or {} %}
+  {% set risk = report.risk_assessment or {} %}
+  {% set sa = report.static_analysis or {} %}
+  {% set da = report.dynamic_analysis or {} %}
+  {% set ti = report.threat_intelligence or {} %}
+  {% set fraud = report.fraud_intent_analysis or {} %}
+  {% set perms = sa.permissions or {} %}
+  {% set sev = (risk.severity or "Unknown")|string %}
+  {% set score = risk.risk_score if risk.risk_score is not none else 0 %}
+
+  {% if score >= 80 %}
+    {% set tier = "critical" %}
+  {% elif score >= 60 %}
+    {% set tier = "high" %}
+  {% elif score >= 40 %}
+    {% set tier = "medium" %}
+  {% elif score >= 20 %}
+    {% set tier = "low" %}
+  {% else %}
+    {% set tier = "info" %}
+  {% endif %}
+
+  {# ══════════════════════════════════════════════════════
+     PAGE 1 — COVER
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="cover">
+    <div class="cover-brand">Sentinel · APK Threat Investigation</div>
+
+    <div class="cover-title">{{ meta.filename or "Unknown APK" }}</div>
+    <div class="cover-subtitle">Automated Malware Analysis Report</div>
+
+    <div class="cover-score-ring ring-{{ tier }}">
+      <div class="cover-score-number" style="color:{% if tier == 'critical' %}#fca5a5{% elif tier == 'high' %}#fdba74{% elif tier == 'medium' %}#fde68a{% elif tier == 'low' %}#93c5fd{% else %}#cbd5e1{% endif %};">
+        {{ "%.0f"|format(score|float) }}
+      </div>
+      <div class="cover-score-label">Risk Score</div>
+    </div>
+
+    <div class="cover-severity" style="color:{% if tier == 'critical' %}#fca5a5{% elif tier == 'high' %}#fdba74{% elif tier == 'medium' %}#fde68a{% elif tier == 'low' %}#93c5fd{% else %}#cbd5e1{% endif %};">
+      {{ sev }} Severity
+    </div>
+
+    <div class="cover-classification cls-{{ tier }}">
+      {{ risk.classification or "Unknown Classification" }}
+    </div>
+
+    <div class="cover-meta-row">
+      <span>
+        <span class="label">Generated</span>
+        <span class="value">{{ report.generated_at or "—" }}</span>
+      </span>
+      <span>
+        <span class="label">APK ID</span>
+        <span class="value">{{ report.apk_id or "—" }}</span>
+      </span>
+    </div>
+
+    <div class="cover-meta-row" style="margin-top:12px;">
+      <span>
+        <span class="label">SHA-256</span>
+        <span class="value">{{ meta.sha256 or "—" }}</span>
+      </span>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     PAGE 2 — TABLE OF CONTENTS + OVERVIEW HERO
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="toc">
+    <div class="toc-title">Table of Contents</div>
+    <div class="toc-item"><span class="toc-num">1</span> APK Metadata</div>
+    <div class="toc-item"><span class="toc-num">2</span> Executive Summary</div>
+    <div class="toc-item"><span class="toc-num">3</span> Risk Assessment &amp; Explainability</div>
+    <div class="toc-item"><span class="toc-num">4</span> Static Analysis</div>
+    <div class="toc-item"><span class="toc-num">5</span> Dynamic Analysis</div>
+    <div class="toc-item"><span class="toc-num">6</span> Threat Intelligence</div>
+    <div class="toc-item"><span class="toc-num">7</span> MITRE ATT&amp;CK Mappings</div>
+    <div class="toc-item"><span class="toc-num">8</span> Fraud Intent Analysis</div>
+    <div class="toc-item"><span class="toc-num">9</span> AI Investigation Report</div>
+    <div class="toc-item"><span class="toc-num">10</span> Recommendations</div>
+  </div>
+
+  {# ── Quick-glance hero bar ─────────────────────────── #}
+
+  <div class="hero">
+    <div class="score-box">
+      <div class="score-label">Risk Score</div>
+      <div class="score-value score-{{ tier }}">{{ "%.0f"|format(score|float) }}</div>
+      <div class="muted" style="font-size:9px;font-weight:700;">{{ sev }}</div>
+    </div>
+    <div class="hero-body">
+      <div class="intent">{{ fraud.predicted_intent or "Analysis Pending" }}</div>
+      <div class="muted" style="font-size:10px;">
+        {{ risk.classification or "Unknown" }} — Detected through static analysis, dynamic sandbox, and AI investigation
+      </div>
+      <div class="stats">
+        <span class="stat stat-red">{{ (sa.yara_matches or [])|length }} YARA Matches</span>
+        <span class="stat stat-orange">{{ (da.network_connections or [])|length }} Network Connections</span>
+        <span class="stat stat-yellow">{{ (sa.suspicious_apis or [])|length }} Suspicious APIs</span>
+        <span class="stat stat-blue">{{ (report.mitre_attack_mappings or [])|length }} MITRE Techniques</span>
+        <span class="stat stat-green">{{ perms.total_count or 0 }} Permissions ({{ perms.dangerous_count or 0 }} dangerous)</span>
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 1 — APK METADATA
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section">
+    <h2><span class="sec-num">1</span> APK Metadata</h2>
+    <table class="meta">
+      <tr><td>Filename</td><td>{{ meta.filename or "—" }}</td></tr>
+      <tr><td>SHA-256</td><td class="mono break">{{ meta.sha256 or "—" }}</td></tr>
+      <tr><td>File Size</td><td>{{ meta.file_size_human or "—" }}{% if meta.file_size %} ({{ "{:,}".format(meta.file_size) }} bytes){% endif %}</td></tr>
+      <tr><td>Package Name</td><td class="mono">{{ meta.package_name or "—" }}</td></tr>
+      <tr><td>Min SDK Version</td><td>{{ meta.min_sdk or "—" }}</td></tr>
+      <tr><td>Target SDK Version</td><td>{{ meta.target_sdk or "—" }}</td></tr>
+      <tr><td>Upload Time</td><td>{{ meta.upload_time or "—" }}</td></tr>
+      <tr><td>Report Status</td><td><span class="badge {% if report.report_status == 'complete' %}sev-info{% else %}sev-medium{% endif %}">{{ report.report_status or "—" }}</span></td></tr>
+    </table>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 2 — EXECUTIVE SUMMARY
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section">
+    <h2><span class="sec-num">2</span> Executive Summary</h2>
+    <div class="summary-box">{{ report.executive_summary or "No summary available." }}</div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 3 — RISK ASSESSMENT & SHAP EXPLAINABILITY
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section break-before">
+    <h2><span class="sec-num">3</span> Risk Assessment &amp; Explainability</h2>
+
+    <table class="grid-2">
+      <tr>
+        <td>
+          <h3>Classification</h3>
+          <table class="meta">
+            <tr><td>Risk Score</td><td><strong class="score-{{ tier }}" style="font-size:14px;">{{ "%.1f"|format(score|float) }} / 100</strong></td></tr>
+            <tr><td>Severity</td><td><span class="badge sev-{{ tier|lower }}">{{ sev }}</span></td></tr>
+            <tr><td>Classification</td><td>{{ risk.classification or "—" }}</td></tr>
+            {% if risk.malware_family %}
+            <tr><td>Malware Family</td><td class="mono" style="color:#dc2626;font-weight:700;">{{ risk.malware_family }}</td></tr>
+            {% endif %}
+          </table>
+        </td>
+        <td>
+          <h3>Key Indicators</h3>
+          <div class="row">
+            <span class="muted">Obfuscation</span>
+            {% if sa.obfuscation_detected %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Dynamic Code Loading</span>
+            {% if sa.dynamic_code_loading %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Native Code</span>
+            {% if sa.native_code %}<span class="flag-bad">Present</span>{% else %}<span class="flag-ok">None</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Reflection Usage</span>
+            {% if sa.reflection_usage %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">SMS Interception</span>
+            {% if da.sms_interception %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Accessibility Abuse</span>
+            {% if da.accessibility_abuse %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Overlay Attacks</span>
+            {% if da.overlay_attacks %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Keylogging</span>
+            {% if da.keylogging %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Screen Capture</span>
+            {% if da.screen_capture %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+          <div class="row">
+            <span class="muted">Device Admin Abuse</span>
+            {% if da.device_admin_abuse %}<span class="flag-bad">Detected</span>{% else %}<span class="flag-ok">Clean</span>{% endif %}
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    {# ── Class Probabilities ─────────────────────────── #}
+
+    {% set probs = risk.class_probabilities %}
+    {% if probs %}
+    <h3>Classification Probabilities (XGBoost)</h3>
+    {% if probs is mapping %}
+      {% for label, val in probs.items() %}
+      <div class="prob-row">
+        <div class="prob-label">{{ label }}</div>
+        <div class="prob-bar-bg">
+          <div class="prob-bar" style="width:{{ (val * 100)|round(1) }}%;background:{% if 'malicious' in label|lower or 'critical' in label|lower %}#dc2626{% elif 'suspicious' in label|lower or 'high' in label|lower %}#ea580c{% elif 'low' in label|lower or 'unwanted' in label|lower %}#ca8a04{% else %}#16a34a{% endif %};"></div>
+        </div>
+        <div class="prob-val">{{ "%.1f"|format(val * 100) }}%</div>
+      </div>
+      {% endfor %}
+    {% elif probs is iterable %}
+      {% for p in probs %}
+      <div class="prob-row">
+        <div class="prob-label">{% if p is mapping %}{{ p.label or p.class or "Class " ~ loop.index }}{% else %}Class {{ loop.index }}{% endif %}</div>
+        <div class="prob-bar-bg">
+          <div class="prob-bar" style="width:{{ ((p.value if p is mapping else p) * 100)|round(1) }}%;background:#0891b2;"></div>
+        </div>
+        <div class="prob-val">{{ "%.1f"|format((p.value if p is mapping else p) * 100) }}%</div>
+      </div>
+      {% endfor %}
+    {% endif %}
+    {% endif %}
+
+    {# ── SHAP Explainability ─────────────────────────── #}
+
+    {% set shap = report.shap_explainability or [] %}
+    {% if shap %}
+    <h3>SHAP Feature Importance (What Drove The Score)</h3>
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th style="width:50%;">Impact</th>
+          <th style="width:70px;">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in shap %}
+        <tr>
+          <td class="mono">{% if s is mapping %}{{ s.feature or s.name or s }}{% else %}{{ s }}{% endif %}</td>
+          <td>
+            {% if s is mapping and s.value is defined %}
+              {% set sv = s.value|float %}
+              {% set abs_sv = sv if sv >= 0 else -sv %}
+              {% set max_val = 1.0 %}
+              {% set pct = ((abs_sv / max_val) * 100) if max_val > 0 else 0 %}
+              {% if pct > 100 %}{% set pct = 100 %}{% endif %}
+              <div class="shap-bar-bg">
+                <div class="shap-bar {% if sv >= 0 %}shap-positive{% else %}shap-negative{% endif %}" style="width:{{ pct }}%;"></div>
+              </div>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td style="font-weight:700;color:{% if s is mapping and s.value is defined and s.value|float >= 0 %}#dc2626{% else %}#2563eb{% endif %};">
+            {% if s is mapping and s.value is defined %}{{ "%.4f"|format(s.value|float) }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="muted" style="margin-top:6px;font-size:9px;">
+      <span style="color:#dc2626;">■</span> Increases risk &nbsp;&nbsp;
+      <span style="color:#2563eb;">■</span> Decreases risk
+    </div>
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 4 — STATIC ANALYSIS
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section break-before allow-break">
+    <h2><span class="sec-num">4</span> Static Analysis</h2>
+
+    {# ── 4a. Dangerous Permissions ───────────────────── #}
+
+    <h3>Permissions ({{ perms.total_count or 0 }} total · {{ perms.dangerous_count or 0 }} dangerous)</h3>
+    {% set danger_perms = perms.dangerous_permissions or [] %}
+    {% if danger_perms %}
+    <table class="data" style="margin-bottom:10px;">
+      <thead>
+        <tr><th>Permission</th><th style="width:80px;">Status</th></tr>
+      </thead>
+      <tbody>
+        {% for p in danger_perms %}
+        <tr>
+          <td class="mono break">{{ p.full or p.name or p }}</td>
+          <td><span class="pill pill-danger">DANGEROUS</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty" style="margin-bottom:10px;">No dangerous permissions listed.</div>
+    {% endif %}
+
+    {# ── All permissions (non-dangerous) ─────────────── #}
+
+    {% set all_perms = perms.all_permissions or [] %}
+    {% set normal_perms = [] %}
+    {% for p in all_perms %}
+      {% if p is mapping and p.get("full") not in (danger_perms | map(attribute="full") | list) %}
+        {% if normal_perms.append(p) %}{% endif %}
+      {% endif %}
+    {% endfor %}
+    {% if normal_perms %}
+    <details style="margin-bottom:10px;">
+      <summary style="cursor:pointer;font-weight:700;font-size:10px;color:#475569;">Other Permissions ({{ normal_perms|length }})</summary>
+      <div style="margin-top:6px;">
+        {% for p in normal_perms %}
+          <span class="chip chip-blue">{{ p.full or p.name or p }}</span>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    {# ── 4b. YARA Matches ────────────────────────────── #}
+
+    <h3>YARA Matches</h3>
+    {% set yara = sa.yara_matches or [] %}
+    {% if yara %}
+      {% for y in yara %}
+        <span class="chip">{% if y is mapping %}{{ y.rule or y.name or y }}{% else %}{{ y }}{% endif %}</span>
+      {% endfor %}
+    {% else %}
+      <div class="empty">None</div>
+    {% endif %}
+
+    {# ── 4c. Suspicious APIs ─────────────────────────── #}
+
+    <h3>Suspicious APIs</h3>
+    {% set apis = sa.suspicious_apis or [] %}
+    {% if apis %}
+      {% for api in apis %}
+        <span class="chip chip-orange">
+          {% if api is mapping %}{{ api.name or api.api or api }}{% else %}{{ api }}{% endif %}
+        </span>
+      {% endfor %}
+    {% else %}
+      <div class="empty">None</div>
+    {% endif %}
+
+    {# ── 4d. Hardcoded URLs / IPs ────────────────────── #}
+
+    <h3>Hardcoded URLs &amp; IPs</h3>
+    {% set urls = sa.hardcoded_urls or [] %}
+    {% set ips = sa.hardcoded_ips or [] %}
+    {% if urls or ips %}
+    <table class="data">
+      <thead><tr><th>Type</th><th>Value</th></tr></thead>
+      <tbody>
+        {% for u in urls %}
+        <tr><td>URL</td><td class="mono break" style="color:#ea580c;">{{ u }}</td></tr>
+        {% endfor %}
+        {% for ip in ips %}
+        <tr><td>IP</td><td class="mono break" style="color:#ea580c;">{{ ip }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <div class="empty">None found</div>
+    {% endif %}
+
+    {# ── 4e. Obfuscation Details ─────────────────────── #}
+
+    {% if sa.obfuscation_details %}
+    <h3>Obfuscation Details</h3>
+    <div class="summary-box">{{ sa.obfuscation_details }}</div>
+    {% endif %}
+
+    {# ── 4f. Crypto Usage ────────────────────────────── #}
+
+    {% if sa.crypto_usage %}
+    <h3>Cryptographic Usage</h3>
+    {% if sa.crypto_usage is mapping %}
+    <table class="meta">
+      {% for key, val in sa.crypto_usage.items() %}
+      <tr><td>{{ key }}</td><td>{{ val }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="summary-box">{{ sa.crypto_usage }}</div>
+    {% endif %}
+    {% endif %}
+
+    {# ── 4g. Certificate Info ────────────────────────── #}
+
+    {% set cert = sa.certificate_info %}
+    {% if cert %}
+    <h3>Certificate Information</h3>
+    {% if cert is mapping %}
+    <table class="meta">
+      {% for key, val in cert.items() %}
+      <tr><td>{{ key }}</td><td class="mono break">{{ val }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="summary-box mono">{{ cert }}</div>
+    {% endif %}
+    {% endif %}
+
+    {# ── 4h. App Components ──────────────────────────── #}
+
+    {% set comps = sa.components or {} %}
+    {% set acts = comps.activities or [] %}
+    {% set svcs = comps.services or [] %}
+    {% set rcvs = comps.receivers or [] %}
+    {% set provs = comps.providers or [] %}
+    {% if acts or svcs or rcvs or provs %}
+    <h3>Application Components</h3>
+    <table class="grid-2">
+      <tr>
+        <td>
+          <div style="font-weight:700;font-size:10px;color:#475569;margin-bottom:4px;">Activities ({{ acts|length }})</div>
+          {% if acts %}
+          <ul class="component-list">
+            {% for a in acts %}
+            <li>{% if a is mapping %}{{ a.name or a }}{% else %}{{ a }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% else %}<div class="empty">None</div>{% endif %}
+
+          <div style="font-weight:700;font-size:10px;color:#475569;margin:10px 0 4px;">Content Providers ({{ provs|length }})</div>
+          {% if provs %}
+          <ul class="component-list">
+            {% for p in provs %}
+            <li>{% if p is mapping %}{{ p.name or p }}{% else %}{{ p }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% else %}<div class="empty">None</div>{% endif %}
+        </td>
+        <td>
+          <div style="font-weight:700;font-size:10px;color:#475569;margin-bottom:4px;">Services ({{ svcs|length }})</div>
+          {% if svcs %}
+          <ul class="component-list">
+            {% for s in svcs %}
+            <li>{% if s is mapping %}{{ s.name or s }}{% else %}{{ s }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% else %}<div class="empty">None</div>{% endif %}
+
+          <div style="font-weight:700;font-size:10px;color:#475569;margin:10px 0 4px;">Broadcast Receivers ({{ rcvs|length }})</div>
+          {% if rcvs %}
+          <ul class="component-list">
+            {% for r in rcvs %}
+            <li>{% if r is mapping %}{{ r.name or r }}{% else %}{{ r }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% else %}<div class="empty">None</div>{% endif %}
+        </td>
+      </tr>
+    </table>
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 5 — DYNAMIC ANALYSIS
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section break-before allow-break">
+    <h2><span class="sec-num">5</span> Dynamic Analysis</h2>
+
+    {# ── 5a. Network Connections ──────────────────────── #}
+
+    <h3>Network Connections</h3>
+    {% set nets = da.network_connections or [] %}
+    {% if nets %}
+    <table class="data">
+      <thead>
+        <tr><th>Destination</th><th style="width:80px;">Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for n in nets %}
+        <tr>
+          {% if n is mapping %}
+          <td class="mono break">{{ n.url or n.host or n.destination or n.ip or n }}</td>
+          <td class="mono">{{ n.method or n.protocol or "—" }}</td>
+          {% else %}
+          <td class="mono break" colspan="2">{{ n }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <div class="empty">No network connections recorded.</div>
+    {% endif %}
+
+    {# ── 5b. DNS Queries ─────────────────────────────── #}
+
+    {% set dns = da.dns_queries or [] %}
+    {% if dns %}
+    <h3>DNS Queries</h3>
+    <table class="data">
+      <thead><tr><th>Query</th><th style="width:80px;">Type</th></tr></thead>
+      <tbody>
+        {% for d in dns %}
+        <tr>
+          {% if d is mapping %}
+          <td class="mono break">{{ d.domain or d.query or d.name or d }}</td>
+          <td class="mono">{{ d.type or d.record_type or "—" }}</td>
+          {% else %}
+          <td class="mono break" colspan="2">{{ d }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# ── 5c. File Operations ─────────────────────────── #}
+
+    {% set fops = da.file_operations or [] %}
+    {% if fops %}
+    <h3>File Operations</h3>
+    <table class="data">
+      <thead><tr><th>Path</th><th style="width:80px;">Operation</th></tr></thead>
+      <tbody>
+        {% for f in fops %}
+        <tr>
+          {% if f is mapping %}
+          <td class="mono break">{{ f.path or f.file or f }}</td>
+          <td class="mono">{{ f.operation or f.type or "—" }}</td>
+          {% else %}
+          <td class="mono break" colspan="2">{{ f }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# ── 5d. Crypto Operations ───────────────────────── #}
+
+    {% set crypto = da.crypto_operations or [] %}
+    {% if crypto %}
+    <h3>Cryptographic Operations</h3>
+    <table class="data">
+      <thead><tr><th>Algorithm / Operation</th><th style="width:100px;">Detail</th></tr></thead>
+      <tbody>
+        {% for c in crypto %}
+        <tr>
+          {% if c is mapping %}
+          <td class="mono">{{ c.algorithm or c.name or c.operation or c }}</td>
+          <td class="mono">{{ c.detail or c.type or "—" }}</td>
+          {% else %}
+          <td class="mono" colspan="2">{{ c }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# ── 5e. Data Exfiltration ───────────────────────── #}
+
+    {% if da.data_exfiltration %}
+    <h3>Data Exfiltration</h3>
+    {% if da.data_exfiltration is mapping %}
+    <table class="meta">
+      {% for key, val in da.data_exfiltration.items() %}
+      <tr><td>{{ key }}</td><td>{{ val }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="summary-box">{{ da.data_exfiltration }}</div>
+    {% endif %}
+    {% endif %}
+
+    {# ── 5f. C2 Communication ────────────────────────── #}
+
+    {% if da.c2_communication %}
+    <h3>C2 (Command &amp; Control) Communication</h3>
+    {% if da.c2_communication is mapping %}
+    <table class="meta">
+      {% for key, val in da.c2_communication.items() %}
+      <tr><td>{{ key }}</td><td class="mono break">{{ val }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="summary-box">{{ da.c2_communication }}</div>
+    {% endif %}
+    {% endif %}
+
+    {# ── 5g. Behavioral Summary ──────────────────────── #}
+
+    {% if da.behavioral_summary %}
+    <h3>Behavioral Summary</h3>
+    <div class="summary-box">{{ da.behavioral_summary }}</div>
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 6 — THREAT INTELLIGENCE
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section break-before allow-break">
+    <h2><span class="sec-num">6</span> Threat Intelligence</h2>
+    <div class="muted" style="margin-bottom:10px;">
+      {{ ti.total_ioc_matches or 0 }} IOC match(es)
+      {% if ti.sources_consulted %} · Sources: {{ ti.sources_consulted|join(", ") }}{% endif %}
+    </div>
+
+    {# ── 6a. Matched IOCs ────────────────────────────── #}
+
+    {% set iocs = ti.matched_iocs or [] %}
+    {% if iocs %}
+    <h3>Matched Indicators of Compromise</h3>
+    <table class="data">
+      <thead><tr><th>Type</th><th>Value</th><th>Source</th><th style="width:70px;">Severity</th></tr></thead>
+      <tbody>
+        {% for ioc in iocs %}
+        <tr>
+          <td>{% if ioc is mapping %}{{ ioc.type or "—" }}{% else %}—{% endif %}</td>
+          <td class="mono break" style="color:#dc2626;">{% if ioc is mapping %}{{ ioc.value or ioc }}{% else %}{{ ioc }}{% endif %}</td>
+          <td class="mono">{% if ioc is mapping %}{{ ioc.source or "—" }}{% else %}—{% endif %}</td>
+          <td>
+            {% if ioc is mapping and ioc.severity %}
+              <span class="pill {% if ioc.severity|lower in ['critical','high'] %}pill-danger{% elif ioc.severity|lower == 'medium' %}pill-warn{% else %}pill-info{% endif %}">{{ ioc.severity }}</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# ── 6b. Malicious Domains / IPs / URLs ──────────── #}
+
+    {% set domains = ti.malicious_domains or [] %}
+    {% set mips = ti.malicious_ips or [] %}
+    {% set murls = ti.malicious_urls or [] %}
+    {% if domains or mips or murls %}
+    <h3>Malicious Network Indicators</h3>
+    <table class="data">
+      <thead><tr><th>Type</th><th>Indicator</th></tr></thead>
+      <tbody>
+        {% for d in domains %}
+        <tr><td>Domain</td><td class="mono break" style="color:#dc2626;">{{ d }}</td></tr>
+        {% endfor %}
+        {% for ip in mips %}
+        <tr><td>IP</td><td class="mono break" style="color:#dc2626;">{{ ip }}</td></tr>
+        {% endfor %}
+        {% for u in murls %}
+        <tr><td>URL</td><td class="mono break" style="color:#dc2626;">{{ u }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if not iocs and not domains and not mips and not murls %}
+      <div class="empty">No malicious indicators identified.</div>
+    {% endif %}
+
+    {# ── 6c. VirusTotal / Abuse.ch ───────────────────── #}
+
+    {% if ti.virustotal_detection %}
+    <h3>VirusTotal Detection</h3>
+    {% if ti.virustotal_detection is mapping %}
+    <table class="meta">
+      {% for key, val in ti.virustotal_detection.items() %}
+      <tr><td>{{ key }}</td><td>{{ val }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="summary-box">{{ ti.virustotal_detection }}</div>
+    {% endif %}
+    {% endif %}
+
+    {% if ti.abuse_ch_match %}
+    <h3>Abuse.ch Match</h3>
+    {% if ti.abuse_ch_match is mapping %}
+    <table class="meta">
+      {% for key, val in ti.abuse_ch_match.items() %}
+      <tr><td>{{ key }}</td><td>{{ val }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="summary-box">{{ ti.abuse_ch_match }}</div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 7 — MITRE ATT&CK MAPPINGS
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section break-before allow-break">
+    <h2><span class="sec-num">7</span> MITRE ATT&amp;CK Mappings</h2>
+    {% set mitre = report.mitre_attack_mappings or [] %}
+    {% if mitre %}
+      {% for t in mitre %}
+        {% if t is mapping %}
+        <div class="mitre">
+          {% if t.tactic %}<span class="tactic">{{ t.tactic }}</span>{% endif %}
+          <div class="id">{{ t.id or t.technique_id or "—" }}</div>
+          <div class="muted" style="margin-top:4px;">{{ t.name or t.technique or "" }}</div>
+          {% if t.description %}<div style="margin-top:4px;font-size:9px;color:#475569;">{{ t.description }}</div>{% endif %}
+        </div>
+        {% else %}
+        <div class="mitre"><div class="id">{{ t }}</div></div>
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      <div class="empty">No MITRE ATT&amp;CK techniques mapped.</div>
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 8 — FRAUD INTENT ANALYSIS
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section break-before">
+    <h2><span class="sec-num">8</span> Fraud Intent Analysis</h2>
+
+    <table class="meta" style="margin-bottom:14px;">
+      <tr>
+        <td>Predicted Intent</td>
+        <td style="font-weight:700;color:#dc2626;font-size:12px;">{{ fraud.predicted_intent or "—" }}</td>
+      </tr>
+      {% if fraud.confidence is not none and fraud.confidence %}
+      <tr>
+        <td>Confidence</td>
+        <td>
+          <strong>{{ "%.1f"|format(fraud.confidence * 100 if fraud.confidence <= 1 else fraud.confidence) }}%</strong>
+        </td>
+      </tr>
+      {% endif %}
+      {% if fraud.fraud_category %}
+      <tr><td>Fraud Category</td><td>{{ fraud.fraud_category }}</td></tr>
+      {% endif %}
+      {% if fraud.target_victims %}
+      <tr><td>Target Victims</td><td>{{ fraud.target_victims }}</td></tr>
+      {% endif %}
+      {% if fraud.monetization_method %}
+      <tr><td>Monetization Method</td><td>{{ fraud.monetization_method }}</td></tr>
+      {% endif %}
+    </table>
+
+    {# ── Fraud Journey Stages ────────────────────────── #}
+
+    {% set journey = fraud.journey_stages %}
+    {% if journey %}
+    <h3>Attack Journey / Kill Chain</h3>
+    {% if journey is iterable and journey is not string %}
+      {% for stage in journey %}
+      <div class="journey-stage">
+        <div class="stage-num">{{ loop.index }}</div>
+        <div class="stage-body">
+          {% if stage is mapping %}
+            <div style="font-weight:700;">{{ stage.name or stage.stage or stage.title or "Stage " ~ loop.index }}</div>
+            {% if stage.description or stage.detail %}
+            <div class="muted" style="margin-top:2px;">{{ stage.description or stage.detail }}</div>
+            {% endif %}
+          {% else %}
+            <div>{{ stage }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="summary-box">{{ journey }}</div>
+    {% endif %}
+    {% endif %}
+
+    {% if not fraud.predicted_intent and not journey %}
+    <div class="empty">No fraud intent analysis available.</div>
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 9 — AI INVESTIGATION REPORT
+     ══════════════════════════════════════════════════════ #}
+
+  {% if report.ai_summary %}
+  <div class="section break-before allow-break">
+    <h2><span class="sec-num">9</span> AI Investigation Report</h2>
+    <div class="summary-box">{{ report.ai_summary }}</div>
+  </div>
+  {% endif %}
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 10 — RECOMMENDATIONS
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="section {% if report.ai_summary %}{% else %}break-before{% endif %}">
+    <h2><span class="sec-num">10</span> Recommendations</h2>
+    {% set recs = report.recommendations or [] %}
+    {% if recs %}
+      {% for r in recs %}
+      <div class="rec">
+        <div class="rec-num">{{ loop.index }}</div>
+        <div>{{ r }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No recommendations.</div>
+    {% endif %}
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     FOOTER
+     ══════════════════════════════════════════════════════ #}
+
+  <div class="footer-meta" style="text-align:center;margin-top:20px;padding:10px 0;border-top:1px solid #e2e8f0;">
+    Generated by Sentinel · APK Threat Investigation Platform · {{ report.generated_at or "" }}<br/>
+    This report contains confidential security findings. Handle according to your organization's data classification policy.
+  </div>
+
+</body>
+</html>
