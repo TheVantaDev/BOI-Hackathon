@@ -11,7 +11,7 @@ export default defineConfig({
         // In Docker: backend service is reachable via its service name.
         // Falls back to localhost for running outside Docker (npm run dev locally).
         // Local npm run dev → localhost. Docker compose can set VITE_API_URL=http://backend:8000
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
+        target: 'http://backend:8000',
         changeOrigin: true,
       },
     },

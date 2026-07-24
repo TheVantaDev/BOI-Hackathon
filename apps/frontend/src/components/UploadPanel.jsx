@@ -58,8 +58,13 @@ export default function UploadPanel() {
     try {
       const { data } = await uploadAPK(f, setProgress)
       setApkId(data.apk_id)
-      setPhase('analyzing')
-      startPolling(data.apk_id)
+      if (data.status === 'completed') {
+        setPhase('done')
+        setTimeout(() => navigate(`/analysis/${data.apk_id}`), 500)
+      } else {
+        setPhase('analyzing')
+        startPolling(data.apk_id)
+      }
     } catch (err) {
       setPhase('error')
       setError(err?.response?.data?.detail || 'Upload failed. Is the backend running?')

@@ -587,39 +587,130 @@ export default function Analysis() {
 
         {tab === 2 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Engine & Execution Meta */}
             <div className="card" style={{ padding: 24 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Network Requests</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>URL</th>
-                    <th>Method</th>
-                    <th>Risk</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {da.network_requests?.map((r, i) => (
-                    <tr key={i}>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.url}</td>
-                      <td><span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--cyan)' }}>{r.method}</span></td>
-                      <td>
-                        <span style={{ fontSize: 11, color: r.suspicious ? '#ef4444' : '#22c55e', fontWeight: 600 }}>
-                          {r.suspicious ? '⚠ Malicious C2' : '✓ Benign'}
-                        </span>
-                      </td>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: 'var(--cyan)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Activity size={16} /> Dynamic Sandbox Environment & Execution
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                <div style={{ padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Execution Engine</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginTop: 4 }}>
+                    {da.source === 'adb_dynamic' ? 'ADB + Emulator Engine' : (da.source || 'Standard Sandbox')}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Installed Package</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', fontFamily: 'monospace', marginTop: 4 }}>
+                    {da.installed_package || 'Active Sandbox'}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Frida Runtime Hooks</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e', marginTop: 4 }}>
+                    {da.frida?.scripts_injected?.length || 0} Scripts Active
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Sandbox Duration</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginTop: 4 }}>
+                    {da.sandbox_duration_seconds || 5} seconds
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Runtime Threat Detections Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              {/* SMS / OTP Interception */}
+              <div className="card" style={{ padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>SMS / OTP Interception</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: da.sms_intercepted ? '#ef4444' : '#22c55e', padding: '2px 8px', borderRadius: 4, background: da.sms_intercepted ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)' }}>
+                    {da.sms_intercepted ? '⚠ DETECTED' : '✓ Clean'}
+                  </span>
+                </div>
+                {da.sms_content_samples && da.sms_content_samples.length > 0 ? (
+                  da.sms_content_samples.map((s, i) => (
+                    <div key={i} style={{ fontSize: 12, fontFamily: 'monospace', color: '#f97316', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 6, marginTop: 6, border: '1px solid var(--border)' }}>
+                      {s}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>No active SMS theft detected during execution.</div>
+                )}
+              </div>
+
+              {/* Overlay Attack */}
+              <div className="card" style={{ padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>Overlay Attack Detection</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: da.overlay_attack_detected ? '#ef4444' : '#22c55e', padding: '2px 8px', borderRadius: 4, background: da.overlay_attack_detected ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)' }}>
+                    {da.overlay_attack_detected ? '⚠ DETECTED' : '✓ Clean'}
+                  </span>
+                </div>
+                {da.overlay_events && da.overlay_events.length > 0 ? (
+                  da.overlay_events.map((e, i) => (
+                    <div key={i} style={{ fontSize: 12, fontFamily: 'monospace', color: '#ef4444', padding: '8px 12px', background: 'rgba(239,68,68,0.05)', borderRadius: 6, marginTop: 6, border: '1px solid rgba(239,68,68,0.2)' }}>
+                      {typeof e === 'string' ? e : JSON.stringify(e)}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>No overlay window abuse detected.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Network Requests Table */}
+            <div className="card" style={{ padding: 24 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--text-1)' }}>Runtime Network Requests & C2 Connections</div>
+              {da.network_requests && da.network_requests.length > 0 ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>URL / Endpoint</th>
+                      <th>Method</th>
+                      <th>Risk Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {da.network_requests.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.url}</td>
+                        <td><span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--cyan)' }}>{r.method}</span></td>
+                        <td>
+                          <span style={{ fontSize: 11, color: r.suspicious ? '#ef4444' : '#22c55e', fontWeight: 600 }}>
+                            {r.suspicious ? '⚠ Malicious C2' : '✓ Benign'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ padding: '16px 0', fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
+                  No external C2 HTTP requests captured during the 5-second dynamic window.
+                </div>
+              )}
             </div>
+
+            {/* Background Services */}
             <div className="card" style={{ padding: 24 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Background Services</div>
-              {da.background_services?.map((s) => (
-                <div key={s} style={{ fontFamily: 'monospace', fontSize: 12, color: '#f97316', padding: '6px 0', borderBottom: '1px solid rgba(30,45,74,0.3)' }}>{s}</div>
-              ))}
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--text-1)' }}>Background Services & Active Processes</div>
+              {da.background_services && da.background_services.length > 0 ? (
+                da.background_services.map((s) => (
+                  <div key={s} style={{ fontFamily: 'monospace', fontSize: 12, color: '#f97316', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 6, marginBottom: 6, border: '1px solid var(--border)' }}>
+                    {s}
+                  </div>
+                ))
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>No persistent background services registered.</div>
+              )}
             </div>
+
+            {/* Fraud Journey Graph */}
             <div className="card" style={{ padding: 24 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Fraud Journey Reconstruction</div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--text-1)' }}>Fraud Journey & Attack Vector Reconstruction</div>
               <AttackChainGraph height={300} />
             </div>
           </div>
