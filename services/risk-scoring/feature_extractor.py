@@ -57,7 +57,7 @@ def extract_features(data: Dict[str, Any]) -> np.ndarray:
         float(malicious_ioc_count),
         1.0 if dynamic.get("sms_intercepted") else 0.0,
         1.0 if dynamic.get("accessibility_abuse") else 0.0,
-        float(len([r for r in dynamic.get("network_requests", []) if r.get("suspicious")])),
+        float(len([r for r in dynamic.get("network_requests", []) if isinstance(r, dict) and r.get("suspicious")])),
         float(len(dynamic.get("runtime_downloads", []))),
         float(data.get("ai_confidence", 0.5)),
     ]

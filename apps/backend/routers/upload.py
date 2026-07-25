@@ -57,12 +57,13 @@ def _process_apk(apk_id: str, minio_path: str, sha256: str):
         fraud   = _sanitize(result.get("fraud_intent", {}))
         score   = _sanitize(result.get("risk_score", {}))
 
+        import json as _json
         analysis = AnalysisResult(
             apk_id=apk_id,
             static_analysis=static,
             dynamic_analysis=dynamic,
             threat_intel=ti,
-            ai_summary=ai.get("summary", ""),
+            ai_summary=_json.dumps(ai) if ai else "",
         )
         db.add(analysis)
 

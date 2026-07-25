@@ -152,7 +152,26 @@ def _heuristic_score(features: np.ndarray) -> float:
 
     normalizers = np.array([10, 10, 5, 1, 1, 10, 5, 1, 1, 5, 3, 1], dtype=np.float32)
     normalized = np.clip(features / normalizers, 0, 1)
-    return round(min(float(np.dot(normalized, weights)), 100.0), 1)
+    raw = round(min(float(np.dot(normalized, weights)), 100.0), 1)
+
+    # If ZERO confirmed dynamic threats (no SMS, no accessibility abuse, no C2,
+    # no runtime downloads) AND no YARA matches AND no malicious IOCs,
+    # cap at 40 (Low Risk / Suspicious at most).
+    # This prevents ad-SDK apps (Ludo, games, OEM tools) with many static
+    # permissions from being falsely flagged as Highly Malicious.
+    has_dynamic_signal = (
+        features[7] > 0   # sms_intercepted
+        or features[8] > 0  # accessibility_abuse
+        or features[9] > 0  # c2_connection_count
+        or features[10] > 0  # runtime_downloads
+        or features[2] > 0   # yara_match_count
+        or features[6] > 0   # malicious_ioc_count
+    )
+    if not has_dynamic_signal:
+        raw = min(raw, 40.0)
+
+    return raw
+
 
 
 def _heuristic_explanation(features: np.ndarray) -> List[Dict]:

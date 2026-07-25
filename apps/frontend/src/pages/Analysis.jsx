@@ -798,31 +798,105 @@ export default function Analysis() {
           </div>
         )}
 
-        {tab === 4 && (
-          <div className="card" style={{ padding: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--cyan)' }} />
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>AI Investigation Report</div>
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)', color: 'var(--cyan)', fontWeight: 600 }}>
-                llama3:8b-instruct
-              </span>
+
+        {tab === 4 && (() => {
+          // ai_summary is stored as JSON (new) or plain text (legacy)
+          let aiData = {}
+          try {
+            aiData = analysis?.ai_summary ? JSON.parse(analysis.ai_summary) : {}
+          } catch {
+            aiData = { summary: analysis?.ai_summary }
+          }
+          const agentOutputs = aiData.agent_outputs || {}
+          const confidence = aiData.confidence != null ? Math.round(aiData.confidence * 100) : null
+          const confColor = confidence >= 70 ? '#ef4444' : confidence >= 40 ? '#f97316' : '#22c55e'
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Header */}
+              <div className="card" style={{ padding: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--cyan)' }} />
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>AI Investigation Report</div>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)', color: 'var(--cyan)', fontWeight: 600 }}>
+                    llama3:8b
+                  </span>
+                  {aiData.classification && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', fontWeight: 600 }}>
+                      {aiData.classification}
+                    </span>
+                  )}
+                  {confidence != null && (
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, background: `${confColor}18`, border: `1px solid ${confColor}40`, color: confColor, fontWeight: 600 }}>
+                      Confidence: {confidence}%
+                    </span>
+                  )}
+                </div>
+
+                {/* Executive Summary */}
+                {aiData.summary ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.8, whiteSpace: 'pre-line', background: 'var(--bg-secondary)', padding: 20, borderRadius: 10, border: '1px solid var(--border)' }}>
+                    {aiData.summary}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: 'var(--text-3)', fontStyle: 'italic', padding: 20, textAlign: 'center' }}>
+                    AI report not yet available. Upload the APK again to generate a fresh report.
+                  </div>
+                )}
+              </div>
+
+              {/* Agent Outputs */}
+              {Object.keys(agentOutputs).length > 0 && (
+                <div className="card" style={{ padding: 24 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 16 }}>Agent Analysis Breakdown</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    {[
+                      { key: 'static', label: '🔍 Static Agent' },
+                      { key: 'dynamic', label: '⚡ Dynamic Agent' },
+                      { key: 'threat_intel', label: '🌐 Threat Intel Agent' },
+                      { key: 'knowledge', label: '📚 Knowledge Base Agent' },
+                    ].map(({ key, label }) => agentOutputs[key] ? (
+                      <div key={key} style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 16, border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.7 }}>{agentOutputs[key]}</div>
+                      </div>
+                    ) : null)}
+                  </div>
+                </div>
+              )}
+
+              {/* Recommendations */}
+              {aiData.recommendations?.length > 0 && (
+                <div className="card" style={{ padding: 24 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 14 }}>Recommendations</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {aiData.recommendations.map((rec, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', minWidth: 20 }}>{i + 1}.</span>
+                        <span style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>{rec}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* MITRE Mappings */}
+              {aiData.mitre_mappings?.length > 0 && (
+                <div className="card" style={{ padding: 24 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 14 }}>MITRE ATT&CK Mappings</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {aiData.mitre_mappings.map((t, i) => (
+                      <span key={i} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: 'var(--text-2)',
-                lineHeight: 1.8,
-                whiteSpace: 'pre-line',
-                background: 'var(--bg-secondary)',
-                padding: 20,
-                borderRadius: 10,
-                border: '1px solid var(--border)',
-              }}
-            >
-              {analysis?.ai_summary}
-            </div>
-          </div>
-        )}
+          )
+        })()}
+
 
         {tab === 5 && (
           <div className="animate-fade-in">

@@ -8,9 +8,13 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Per-service timeouts: dynamic analysis needs up to ~620s (300s sandbox + Frida sleep + overhead).
-# All other services should complete in well under 90s.
+# Per-service timeouts:
+# - Dynamic analysis: up to ~620s (300s sandbox + Frida sleep + overhead)
+# - AI investigation: 5 LLM sub-agent calls × ~60s each + consolidation = ~360s min.
+#   Give 600s total headroom for CPU-only llama3:8b inference.
+# - Standard: all other microservices should complete in under 90s.
 TIMEOUT_DYNAMIC  = httpx.Timeout(620.0, connect=10.0)
+TIMEOUT_AI       = httpx.Timeout(600.0, connect=10.0)
 TIMEOUT_STANDARD = httpx.Timeout(90.0,  connect=10.0)
 
 
@@ -125,7 +129,7 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
 
         # Stage 3: AI investigation + Fraud intent run IN PARALLEL
         ai_result, fraud_result = await asyncio.gather(
-            _post(client, f"{settings.ai_engine_url}/investigate", combined, timeout=TIMEOUT_STANDARD),
+            _post(client, f"{settings.ai_engine_url}/investigate", combined, timeout=TIMEOUT_AI),
             _post(client, f"{settings.fraud_engine_url}/predict", {
                 "apk_id": apk_id,
                 "analysis_summary": fraud_summary,   # ← was: package_name (bug fixed)
@@ -138,7 +142,7 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
             "static": static,
             "dynamic": dynamic,
             "threat_intel": threat_intel,
-            "ai_confidence": ai_result.get("confidence", 0.5),
+            "ai_confidence": ai_result.get("confidence", 0.0),
         }
         score_result = await _post(
             client, f"{settings.risk_scoring_url}/score", scoring_payload, timeout=TIMEOUT_STANDARD

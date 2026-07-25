@@ -32,11 +32,19 @@ reports/
 # Docker
 *.log
 
-# ML models
-# *.pkl
-# *.joblib
-# *.xgb
-# models/saved/
+# ML models (large binary files — use Git LFS or store separately)
+*.pkl
+*.joblib
+*.xgb
+# Keep .json model files out too (xgb model is 5.9 MB — fine, but blobs are huge)
+# services/risk-scoring/models/*.json  ← intentionally kept (small, needed for Docker build)
+
+# Ollama model data & Docker volume data — NEVER commit these (can be GBs)
+infra/data/
+infra/volumes/
+infra/postgres_data/
+infra/minio_data/
+infra/chroma_data/
 
 # DB
 *.db

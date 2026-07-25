@@ -161,10 +161,17 @@ def _build_dynamic_findings(dynamic: dict) -> dict:
     frida = _safe_get(dynamic, "frida", default={})
     # Derive keylogging / screen_capture from Frida ATS events
     ats_count = _safe_get(dynamic, "ats_action_count", default=0)
+    # Guard: overlay_events may contain strings (URLs) or dicts depending on sandbox version
+    overlay_events = _safe_get(dynamic, "overlay_events", default=[])
     screenshot = any(
-        e.get("type") == "screenshot_taken"
-        for e in _safe_get(dynamic, "overlay_events", default=[])
+        isinstance(e, dict) and e.get("type") == "screenshot_taken"
+        for e in overlay_events
     )
+    # Guard: network_requests may be a list of strings or dicts
+    suspicious_requests = [
+        r for r in (network_reqs if isinstance(network_reqs, list) else [])
+        if isinstance(r, dict) and r.get("suspicious")
+    ]
     return {
         # Primary behavioral flags
         "sms_interception": sms or otp,
@@ -197,6 +204,7 @@ def _build_dynamic_findings(dynamic: dict) -> dict:
         "analysis_source": _safe_get(dynamic, "source", default="unknown"),
         "sandbox_duration_seconds": _safe_get(dynamic, "sandbox_duration_seconds", default=0),
     }
+
 
 
 def _build_threat_intel(ti: dict, indicators: list) -> dict:

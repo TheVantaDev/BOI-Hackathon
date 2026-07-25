@@ -52,7 +52,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ./data/ollama_models:/root/.ollama
 
 
   backend:

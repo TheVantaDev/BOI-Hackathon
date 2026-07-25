@@ -44,6 +44,31 @@ function StatusBadge({ status }) {
   return <span className={`badge ${map[status] || 'badge-pending'}`}>{status}</span>
 }
 
+function SeverityBadge({ severity }) {
+  const map = {
+    'Highly Malicious': 'badge-malicious',
+    'Suspicious': 'badge-suspicious',
+    'Low Risk': 'badge-low',
+    'Safe': 'badge-safe',
+  }
+  return severity
+    ? <span className={`badge ${map[severity] || 'badge-pending'}`}>{severity}</span>
+    : <span className="badge badge-pending">—</span>
+}
+
+function RiskBar({ score }) {
+  if (score == null) return <span style={{ color: 'var(--text-3)', fontSize: 12 }}>—</span>
+  const color = score >= 75 ? '#ef4444' : score >= 55 ? '#f97316' : score >= 30 ? '#eab308' : '#22c55e'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ width: 60, height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: `${score}%`, height: '100%', background: color, borderRadius: 3 }} />
+      </div>
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{score}</span>
+    </div>
+  )
+}
+
 function formatTime(iso) {
   return new Date(iso).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
 }
@@ -211,6 +236,8 @@ export default function Dashboard() {
               <tr>
                 <th>Filename</th>
                 <th>SHA256</th>
+                <th>Risk Score</th>
+                <th>Severity</th>
                 <th>Status</th>
                 <th>Uploaded</th>
                 <th></th>
@@ -226,6 +253,8 @@ export default function Dashboard() {
                     </div>
                   </td>
                   <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{u.sha256?.slice(0, 16)}…</td>
+                  <td><RiskBar score={u.risk_score} /></td>
+                  <td><SeverityBadge severity={u.severity} /></td>
                   <td><StatusBadge status={u.status} /></td>
                   <td>{formatTime(u.upload_time)}</td>
                   <td>
