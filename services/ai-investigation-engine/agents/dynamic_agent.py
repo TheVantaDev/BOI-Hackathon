@@ -7,11 +7,12 @@ import ollama
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = "llama3:8b"
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 
 def _call_llm(prompt: str) -> str:
     try:
-        client = ollama.Client(host=OLLAMA_HOST)
+        client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_TIMEOUT)
         resp = client.chat(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -31,7 +32,7 @@ def analyze(dynamic_data: Dict[str, Any]) -> str:
     services = dynamic_data.get("background_services", [])
     file_writes = dynamic_data.get("file_writes", [])
 
-    prompt = f"""You are a malware analyst reviewing dynamic sandbox analysis results of an Android APK.
+    prompt = f"""You are a malware analyst reviewing dynamic sandbox results of an Android APK.
 
 Network requests (suspicious): {[r.get("url") for r in suspicious_net]}
 SMS interception detected: {sms}
@@ -40,7 +41,8 @@ Background services spawned: {services}
 Suspicious file writes: {file_writes}
 Runtime downloads: {dynamic_data.get("runtime_downloads", [])}
 
-Provide a concise technical summary of the runtime behavior in 3-4 sentences. Explain what this behavior indicates about the malware's intent."""
+Provide a concise technical summary of the runtime behavior in 3-4 sentences.
+If no suspicious behavior was detected, clearly state the app showed no malicious runtime activity."""
 
     result = _call_llm(prompt)
     if not result:

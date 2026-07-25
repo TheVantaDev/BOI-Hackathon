@@ -7,11 +7,12 @@ import ollama
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = "llama3:8b"
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 
 def _call_llm(prompt: str) -> str:
     try:
-        client = ollama.Client(host=OLLAMA_HOST)
+        client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_TIMEOUT)
         resp = client.chat(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -38,7 +39,8 @@ Obfuscation detected: {obfuscated}
 Dynamic code loading: {static_data.get("dynamic_code_loading", False)}
 Hardcoded URLs: {static_data.get("hardcoded_urls", [])}
 
-Provide a concise technical summary of the static analysis findings in 3-4 sentences. Focus on what the permissions and APIs suggest about the app's intent."""
+Provide a concise technical summary of the static analysis findings in 3-4 sentences.
+If no dangerous signals are present, say the app appears benign. Only flag concerns that are actually present in the data."""
 
     result = _call_llm(prompt)
     if not result:

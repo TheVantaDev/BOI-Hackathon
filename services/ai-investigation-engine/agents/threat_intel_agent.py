@@ -7,11 +7,12 @@ import ollama
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = "llama3:8b"
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 
 def _call_llm(prompt: str) -> str:
     try:
-        client = ollama.Client(host=OLLAMA_HOST)
+        client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_TIMEOUT)
         resp = client.chat(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -40,10 +41,12 @@ Provide a concise threat intelligence summary in 3-4 sentences. Include the sign
 
     result = _call_llm(prompt)
     if not result:
+        if total_malicious == 0:
+            return "Threat intelligence scan found no malicious indicators. All domains, IPs, and hashes are clean across URLHaus, OpenPhish, AbuseIPDB, and MalwareBazaar."
         technique_ids = [t["id"] for t in mitre]
         return (
             f"Threat intelligence identified {total_malicious} malicious indicators. "
-            f"Domains {malicious_domains} and IPs {malicious_ips} are associated with known malware campaigns. "
+            f"Domains {malicious_domains[:3]} and IPs {malicious_ips[:3]} are associated with known malware campaigns. "
             f"MITRE ATT&CK techniques {technique_ids} map this sample to known mobile banking trojan TTPs."
         )
     return result

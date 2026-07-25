@@ -8,16 +8,21 @@ import ollama
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = "llama3:8b"
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
-INTENT_CLASSES = [
-    "credential_theft",
-    "otp_interception",
-    "account_takeover",
-    "data_exfiltration",
-    "overlay_attack",
-    "device_takeover",
-    "fraud_transaction",
-]
+
+def _call_llm(prompt: str) -> str:
+    try:
+        client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_TIMEOUT)
+        resp = client.chat(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={"temperature": 0.1, "num_predict": 512},
+        )
+        return resp["message"]["content"].strip()
+    except Exception as exc:
+        logger.warning("Ollama call failed: %s", exc)
+        return ""
 
 
 def predict_intent(analysis_summary: str, indicators: Dict[str, Any]) -> Dict[str, Any]:
@@ -27,13 +32,26 @@ def predict_intent(analysis_summary: str, indicators: Dict[str, Any]) -> Dict[st
     features = {
         "sms_interception": dynamic.get("sms_intercepted", False),
         "accessibility_abuse": dynamic.get("accessibility_abuse", False),
+        "overlay_attack": dynamic.get("overlay_attack_detected", False),
         "obfuscation": static.get("obfuscation_detected", False),
         "dangerous_permissions": static.get("dangerous_permission_count", 0),
         "yara_matches": static.get("yara_matches", []),
         "c2_connections": len([r for r in dynamic.get("network_requests", []) if r.get("suspicious")]),
     }
 
-    prompt = f"""You are a fraud analyst specializing in mobile banking threats. Based on the analysis summary and behavioral indicators of a malicious Android APK, determine the attacker's primary fraud intent.
+    # Only call LLM if there are actual malicious signals — otherwise rule-based
+    # is sufficient and faster (no Ollama call needed for clean APKs).
+    has_signals = any([
+        features["sms_interception"],
+        features["accessibility_abuse"],
+        features["overlay_attack"],
+        features["c2_connections"] > 0,
+        len(features["yara_matches"]) > 0,
+        features["obfuscation"],
+    ])
+
+    if has_signals:
+        prompt = f"""You are a fraud analyst specializing in mobile banking threats. Based on the analysis summary and behavioral indicators of an Android APK, determine the attacker's primary fraud intent.
 
 Analysis Summary:
 {analysis_summary}
@@ -41,60 +59,86 @@ Analysis Summary:
 Behavioral Indicators:
 {json.dumps(features, indent=2)}
 
-Available intent categories: {', '.join(INTENT_CLASSES)}
+Available intent categories: credential_theft, otp_interception, account_takeover, data_exfiltration, overlay_attack, device_takeover, fraud_transaction, benign
 
 Respond with JSON containing:
-- "primary_intent": the most likely intent from the list above
-- "secondary_intents": list of other applicable intents
+- "primary_intent": the most likely intent from the list above (use "benign" if no malicious intent found)
+- "secondary_intents": list of other applicable intents (empty list if benign)
 - "confidence": float 0-1
 - "rationale": one sentence explanation"""
 
-    try:
-        client = ollama.Client(host=OLLAMA_HOST)
-        resp = client.chat(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.1, "num_predict": 256},
-        )
-        raw = resp["message"]["content"].strip()
-
-        start = raw.find("{")
-        end = raw.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(raw[start:end])
-    except Exception as exc:
-        logger.warning("Intent prediction via Ollama failed: %s", exc)
+        try:
+            client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_TIMEOUT)
+            resp = client.chat(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                options={"temperature": 0.1, "num_predict": 256},
+            )
+            raw = resp["message"]["content"].strip()
+            start = raw.find("{")
+            end = raw.rfind("}") + 1
+            if start >= 0 and end > start:
+                return json.loads(raw[start:end])
+        except Exception as exc:
+            logger.warning("Intent prediction via Ollama failed: %s", exc)
 
     return _rule_based_intent(features)
 
 
 def _rule_based_intent(features: Dict) -> Dict:
-    if features["sms_interception"] and features["accessibility_abuse"]:
+    sms = features["sms_interception"]
+    accessibility = features["accessibility_abuse"]
+    overlay = features.get("overlay_attack", False)
+    c2 = features["c2_connections"]
+    yara = features["yara_matches"]
+    obfuscation = features["obfuscation"]
+    perms = features["dangerous_permissions"]
+
+    # Check if ANY real malicious signal exists.
+    # Previously: defaulted to "credential_theft" for ANY app with ≥1 dangerous permission.
+    # A calculator, camera app, or file manager all have dangerous permissions but are benign.
+    has_any_signal = sms or accessibility or overlay or c2 > 0 or len(yara) > 0 or obfuscation
+
+    if not has_any_signal:
+        # Truly clean app — no malicious runtime or static signals
+        return {
+            "primary_intent": "benign",
+            "secondary_intents": [],
+            "confidence": round(max(0.0, 0.1 - 0.01 * perms), 2),  # lower confidence if more perms
+            "rationale": "No malicious behavioral signals detected. App appears to be benign.",
+            "predicted_intent": "No Malicious Intent Detected",
+        }
+
+    if sms and accessibility:
         primary = "account_takeover"
         secondary = ["otp_interception", "credential_theft"]
         rationale = "SMS interception combined with accessibility abuse indicates full account takeover capability."
-    elif features["sms_interception"]:
+    elif sms:
         primary = "otp_interception"
         secondary = ["credential_theft"]
         rationale = "SMS interception capability targets banking OTP theft."
-    elif features["accessibility_abuse"]:
+    elif overlay or accessibility:
         primary = "overlay_attack"
         secondary = ["credential_theft"]
-        rationale = "Accessibility service abuse enables overlay phishing of banking credentials."
-    elif features["c2_connections"] > 0:
+        rationale = "Accessibility service abuse or overlay capability enables phishing of banking credentials."
+    elif c2 > 0:
         primary = "data_exfiltration"
         secondary = ["device_takeover"]
         rationale = "Active C2 communication suggests data collection and exfiltration."
     else:
+        # Has YARA / obfuscation but no dynamic signals — flag but lower confidence
         primary = "credential_theft"
         secondary = []
-        rationale = "Dangerous permissions and suspicious APIs indicate credential harvesting intent."
+        rationale = "Static indicators (obfuscation/YARA) suggest potential credential harvesting capability."
 
-    confidence = min(0.6 + 0.1 * features["dangerous_permissions"] + 0.1 * len(features["yara_matches"]), 0.95)
+    # Confidence based on how many real signals are present, not just permission count
+    signal_count = sum([bool(sms), bool(accessibility), bool(overlay), c2 > 0, len(yara) > 0, bool(obfuscation)])
+    confidence = min(0.4 + 0.1 * signal_count, 0.95)
 
     return {
         "primary_intent": primary,
         "secondary_intents": secondary,
         "confidence": round(confidence, 2),
         "rationale": rationale,
+        "predicted_intent": primary.replace("_", " ").title(),
     }

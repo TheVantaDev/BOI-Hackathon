@@ -343,20 +343,64 @@ export default function Analysis() {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [processingStatus, setProcessingStatus] = useState(null)
 
   useEffect(() => {
     if (!id) return
-    setLoading(true)
-    setError(null)
-    Promise.all([getAnalysis(id), getReport(id)])
-      .then(([a, r]) => {
-        setAnalysis(a.data)
-        setReport(r.data)
-      })
-      .catch(() => {
+
+    let pollInterval = null
+
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+
+      // Use allSettled so one failing endpoint doesn't kill the entire page.
+      // Previously: Promise.all — if report threw a 500, analysis page showed
+      // 'check backend' even though analysis data was fine.
+      const [analysisResult, reportResult] = await Promise.allSettled([
+        getAnalysis(id),
+        getReport(id),
+      ])
+
+      const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value.data : null
+      const reportData = reportResult.status === 'fulfilled' ? reportResult.value.data : null
+
+      if (!analysisData) {
         setError('Failed to load analysis. Make sure the backend is running and this analysis exists.')
-      })
-      .finally(() => setLoading(false))
+        setLoading(false)
+        return
+      }
+
+      setAnalysis(analysisData)
+      setReport(reportData)
+      setLoading(false)
+
+      // If still processing, poll status every 4 seconds and reload when done
+      const status = analysisData.status
+      if (status === 'processing' || status === 'pending') {
+        setProcessingStatus(status)
+        pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await getAnalysisStatus(id)
+            const newStatus = statusRes.data.status
+            setProcessingStatus(newStatus)
+            if (newStatus === 'completed' || newStatus === 'failed') {
+              clearInterval(pollInterval)
+              // Reload full data now that pipeline finished
+              const [a2, r2] = await Promise.allSettled([getAnalysis(id), getReport(id)])
+              if (a2.status === 'fulfilled') setAnalysis(a2.value.data)
+              if (r2.status === 'fulfilled') setReport(r2.value.data)
+              setProcessingStatus(null)
+            }
+          } catch {
+            clearInterval(pollInterval)
+          }
+        }, 4000)
+      }
+    }
+
+    loadData()
+    return () => { if (pollInterval) clearInterval(pollInterval) }
   }, [id])
 
   const handleDownloadPdf = async () => {
@@ -408,6 +452,20 @@ export default function Analysis() {
 
   return (
     <div style={{ padding: '28px 32px', minHeight: '100vh' }}>
+
+      {/* Processing banner — shows while pipeline is still running */}
+      {processingStatus && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 20px', marginBottom: 20, borderRadius: 10,
+          background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)',
+        }}>
+          <Loader2 size={16} className="animate-spin" color="#eab308" />
+          <span style={{ fontSize: 13, color: '#eab308', fontWeight: 500 }}>
+            Analysis pipeline is running ({processingStatus})… Results will update automatically.
+          </span>
+        </div>
+      )}
       {/* Back + header */}
       <div className="animate-fade-in-up" style={{ marginBottom: 24 }}>
         <button
