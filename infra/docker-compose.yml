@@ -88,16 +88,31 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # VITE_API_URL must be resolvable from the user's BROWSER, not from inside Docker.
-      # 'backend:8000' is an internal Docker hostname — browsers can't reach it.
-      # Use localhost (host-facing port) so the bundled JS makes requests to the right place.
-      VITE_API_URL: http://localhost:8000
+      # Vite dev server inside Docker proxies /api requests to backend:8000
+      VITE_API_URL: http://backend:8000
     volumes:
       - ../apps/frontend/src:/app/src
       - ../apps/frontend/index.html:/app/index.html
       - ../apps/frontend/vite.config.js:/app/vite.config.js
     depends_on:
       - backend
+
+  frontend-v2:
+    build:
+      context: ../apps/frontend-v2
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
+      VITE_API_URL: http://backend:8000
+    volumes:
+      - ../apps/frontend-v2/src:/app/src
+      - ../apps/frontend-v2/index.html:/app/index.html
+      - ../apps/frontend-v2/vite.config.mjs:/app/vite.config.mjs
+    depends_on:
+      - backend
+
 
   static-analysis:
     build:
