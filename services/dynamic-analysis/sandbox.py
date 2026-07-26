@@ -631,10 +631,27 @@ async def _run_adb_frida_analysis(
         )
         log_text = logcat_res.stdout or ""
 
-        # Parse basic findings from logcat
-        sms_found = any(k in log_text.lower() for k in ["sms", "otp", "telephony", "receiver"])
-        overlay_found = any(k in log_text.lower() for k in ["overlay", "alert_window", "system_alert"])
-        accessibility_found = any(k in log_text.lower() for k in ["accessibility", "accessibilityservice"])
+        # Parse basic findings from logcat.
+        # IMPORTANT: Use SPECIFIC patterns only — broad terms like "receiver", "telephony",
+        # "accessibility" appear in EVERY Android app's logcat (they are normal Android
+        # system components). Using them caused Hello World apps to be flagged as malware.
+        sms_found = any(k in log_text.lower() for k in [
+            "sendtextmessage",       # actual SMS send API
+            "smsmanager",            # SMS manager class
+            "interceptsms",          # explicit interception
+            "otp" ,                  # OTP in context
+            "smsmessage.createfrom", # reading incoming SMS
+        ])
+        overlay_found = any(k in log_text.lower() for k in [
+            "system_alert_window",   # overlay permission usage
+            "type_system_overlay",   # overlay window type
+            "type_application_overlay",
+        ])
+        accessibility_found = any(k in log_text.lower() for k in [
+            "performglobalaction",   # ATS performing actions
+            "accessibilityservice: onAccessibilityEvent",
+            "gesturedescription",    # gesture injection
+        ])
 
     except Exception as exc:
         logger.warning("ADB install/launch fallback failed: %s", exc)

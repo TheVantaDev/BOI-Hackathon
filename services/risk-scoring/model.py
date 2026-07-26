@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from feature_extractor import extract_features, FEATURE_NAMES
+from feature_extractor import extract_features, extract_xgboost_features, FEATURE_NAMES, XGBOOST_FEATURE_NAMES
 
 logger = logging.getLogger(__name__)
 MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.json"))
@@ -35,7 +35,7 @@ def _load_model():
     return _model
 
 
-def predict_score(features: np.ndarray) -> float:
+def predict_score(features: np.ndarray, _raw_data: dict = None) -> float:
     model = _load_model()
 
     if model == "heuristic":
@@ -44,7 +44,11 @@ def predict_score(features: np.ndarray) -> float:
     try:
         import xgboost as xgb
 
-        dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
+        # XGBoost must receive exactly the 12 features it was trained on.
+        # Pass the raw data dict so we can extract the correct 12-feature slice.
+        # 'features' here may be 16-wide (heuristic); we rebuild the 12-wide version.
+        xgb_features = extract_xgboost_features(_raw_data) if _raw_data else features[:12]
+        dmatrix = xgb.DMatrix(xgb_features.reshape(1, -1), feature_names=XGBOOST_FEATURE_NAMES)
 
         # model was trained with multi:softprob — output shape is (n_samples, n_classes)
         best_iteration = getattr(model, 'best_iteration', 0)
@@ -56,14 +60,41 @@ def predict_score(features: np.ndarray) -> float:
 
         # weighted sum: proba[0] @ severity_vec gives a continuous 0-100 risk score
         risk_score = float(proba[0] @ SEVERITY_VEC)
-        return round(min(max(risk_score, 0.0), 100.0), 1)
+        risk_score = round(min(max(risk_score, 0.0), 100.0), 1)
+
+        # ── Safety cap: mirror the heuristic's false-positive guard ──────────
+        # XGBoost was trained on a malware-heavy dataset and tends to give
+        # inflated scores when ALL confirmed threat signals are zero (clean APKs,
+        # Hello World apps, internal tools).  If there is NO confirmed dynamic
+        # evidence we cap at 40 — the same ceiling the heuristic uses.
+        if _raw_data is not None:
+            static  = _raw_data.get("static",  {})
+            dynamic = _raw_data.get("dynamic", {})
+            ti      = _raw_data.get("threat_intel", {})
+            has_confirmed_signal = bool(
+                static.get("yara_matches")               # YARA hit
+                or dynamic.get("sms_intercepted")         # SMS/OTP stolen
+                or dynamic.get("accessibility_abuse")     # ATS / overlay
+                or dynamic.get("overlay_attack_detected") # UI overlay
+                or ti.get("malicious_count", 0) > 0       # known bad IOC
+                or len([r for r in dynamic.get("network_requests", [])
+                        if isinstance(r, dict) and r.get("suspicious")]) > 0  # C2
+            )
+            if not has_confirmed_signal:
+                risk_score = min(risk_score, 40.0)
+                logger.info(
+                    "XGBoost score capped at 40 (no confirmed signals): raw=%.1f → %.1f",
+                    float(proba[0] @ SEVERITY_VEC), risk_score
+                )
+
+        return risk_score
 
     except Exception as exc:
         logger.warning("XGBoost prediction failed, falling back to heuristic: %s", exc)
         return _heuristic_score(features)
 
 
-def predict_class(features: np.ndarray) -> Dict:
+def predict_class(features: np.ndarray, _raw_data: dict = None) -> Dict:
     model = _load_model()
 
     if model == "heuristic":
@@ -72,7 +103,8 @@ def predict_class(features: np.ndarray) -> Dict:
     try:
         import xgboost as xgb
 
-        dmatrix = xgb.DMatrix(features.reshape(1, -1), feature_names=FEATURE_NAMES)
+        xgb_features = extract_xgboost_features(_raw_data) if _raw_data else features[:12]
+        dmatrix = xgb.DMatrix(xgb_features.reshape(1, -1), feature_names=XGBOOST_FEATURE_NAMES)
         best_iteration = getattr(model, 'best_iteration', 0)
         kwargs = {}
         if best_iteration > 0:
@@ -148,15 +180,25 @@ def _heuristic_score(features: np.ndarray) -> float:
         6.0,   # c2_connection_count
         5.0,   # runtime_downloads
         10.0,  # ai_confidence
+        # QuarkEngine behavioral features — high weights because these are
+        # confirmed criminal API sequences, not just static indicators
+        10.0,  # quark_crime_count
+        20.0,  # quark_max_confidence  ← strongest single signal
+        8.0,   # quark_banking_crime
+        8.0,   # quark_sms_crime
     ], dtype=np.float32)
 
-    normalizers = np.array([10, 10, 5, 1, 1, 10, 5, 1, 1, 5, 3, 1], dtype=np.float32)
+    normalizers = np.array(
+        [10, 10, 5, 1, 1, 10, 5, 1, 1, 5, 3, 1,
+         10, 1, 1, 1],   # quark: crime_count/10, max_conf already 0-1, binary flags
+        dtype=np.float32
+    )
     normalized = np.clip(features / normalizers, 0, 1)
     raw = round(min(float(np.dot(normalized, weights)), 100.0), 1)
 
     # If ZERO confirmed dynamic threats (no SMS, no accessibility abuse, no C2,
-    # no runtime downloads) AND no YARA matches AND no malicious IOCs,
-    # cap at 40 (Low Risk / Suspicious at most).
+    # no runtime downloads) AND no YARA matches AND no malicious IOCs
+    # AND no QuarkEngine crimes → cap at 40 (Low Risk / Suspicious at most).
     # This prevents ad-SDK apps (Ludo, games, OEM tools) with many static
     # permissions from being falsely flagged as Highly Malicious.
     has_dynamic_signal = (
@@ -166,6 +208,8 @@ def _heuristic_score(features: np.ndarray) -> float:
         or features[10] > 0  # runtime_downloads
         or features[2] > 0   # yara_match_count
         or features[6] > 0   # malicious_ioc_count
+        or features[12] > 0  # quark_crime_count
+        or features[13] > 0  # quark_max_confidence
     )
     if not has_dynamic_signal:
         raw = min(raw, 40.0)
@@ -175,7 +219,7 @@ def _heuristic_score(features: np.ndarray) -> float:
 
 
 def _heuristic_explanation(features: np.ndarray) -> List[Dict]:
-    contrib_weights = [4, 3, 8, 10, 8, 2, 12, 15, 15, 6, 5, 10]
+    contrib_weights = [4, 3, 8, 10, 8, 2, 12, 15, 15, 6, 5, 10, 10, 20, 8, 8]
     return [
         {
             "feature": FEATURE_NAMES[i],

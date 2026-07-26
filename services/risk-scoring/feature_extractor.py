@@ -2,7 +2,9 @@ import numpy as np
 from typing import Any, Dict
 
 
-FEATURE_NAMES = [
+# Features the XGBoost model was TRAINED on — do NOT change this list.
+# Adding features here will break the model (feature_names mismatch crash).
+XGBOOST_FEATURE_NAMES = [
     "dangerous_perm_count",
     "suspicious_api_count",
     "yara_match_count",
@@ -17,13 +19,21 @@ FEATURE_NAMES = [
     "ai_confidence",
 ]
 
+# All features including QuarkEngine additions — used by the heuristic scorer.
+FEATURE_NAMES = XGBOOST_FEATURE_NAMES + [
+    "quark_crime_count",
+    "quark_max_confidence",
+    "quark_banking_crime",
+    "quark_sms_crime",
+]
 
-def extract_features(data: Dict[str, Any]) -> np.ndarray:
+
+def _base_counts(data: Dict[str, Any]):
+    """Shared extraction logic used by both XGBoost and heuristic feature sets."""
     static = data.get("static", {})
     dynamic = data.get("dynamic", {})
     ti = data.get("threat_intel", {})
 
-    # Count dangerous permissions from the actual list of permission dicts
     permissions = static.get("permissions", [])
     if isinstance(permissions, list):
         dangerous_perm_count = sum(
@@ -40,14 +50,12 @@ def extract_features(data: Dict[str, Any]) -> np.ndarray:
     else:
         dangerous_perm_count = int(static.get("dangerous_permission_count", 0))
 
-    # Count malicious IOCs from threat intel
     malicious_ioc_count = int(ti.get("malicious_count", 0))
-    # Also check indicators list for malicious entries
     indicators = ti.get("indicators", [])
     if isinstance(indicators, list) and malicious_ioc_count == 0:
         malicious_ioc_count = sum(1 for i in indicators if isinstance(i, dict) and i.get("malicious"))
 
-    features = [
+    base = [
         float(dangerous_perm_count),
         float(len(static.get("suspicious_apis", []))),
         float(len(static.get("yara_matches", []))),
@@ -61,6 +69,31 @@ def extract_features(data: Dict[str, Any]) -> np.ndarray:
         float(len(dynamic.get("runtime_downloads", []))),
         float(data.get("ai_confidence", 0.5)),
     ]
+    return base, static
 
-    return np.array(features, dtype=np.float32)
+
+def extract_xgboost_features(data: Dict[str, Any]) -> np.ndarray:
+    """
+    Returns exactly the 12 features the XGBoost model was trained on.
+    Do NOT add Quark or any new features here — it will break the model.
+    """
+    base, _ = _base_counts(data)
+    return np.array(base, dtype=np.float32)
+
+
+def extract_features(data: Dict[str, Any]) -> np.ndarray:
+    """
+    Returns all 16 features (12 original + 4 QuarkEngine) for the heuristic scorer.
+    QuarkEngine features dramatically reduce false positives on benign apps (Ludo, Calculator)
+    by adding behavioral crime signals that permission counts alone cannot provide.
+    """
+    base, static = _base_counts(data)
+    quark_features = [
+        float(static.get("quark_crime_count", 0)),
+        float(static.get("quark_max_confidence", 0.0)),
+        1.0 if static.get("quark_banking_crime") else 0.0,
+        1.0 if static.get("quark_sms_crime") else 0.0,
+    ]
+    return np.array(base + quark_features, dtype=np.float32)
+
 

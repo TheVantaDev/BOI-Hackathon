@@ -22,6 +22,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Download QuarkEngine rules at BUILD TIME while internet is available.
+# Rules are baked into the image → no internet needed at runtime.
+# freshquark pulls ~400 JSON rules from github.com/quark-engine/quark-rules
+RUN python3 -m quark.freshquark || echo "[WARN] freshquark download failed — QuarkEngine will be skipped at runtime"
+
 COPY . .
 
 EXPOSE 8010

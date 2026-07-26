@@ -6,7 +6,7 @@ import ollama
 
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
-MODEL = "llama3:8b"
+MODEL = "llama3.2:3b"
 
 # 300 tokens ÷ ~70 tok/s on M-series = ~4s per call.
 # 120s gives ample headroom for cold-start / CPU fallback.
@@ -40,13 +40,14 @@ def consolidate(
 
     static = raw_data.get("static", {})
     dynamic = raw_data.get("dynamic", {})
+    # Obfuscation alone is NOT a malicious signal — every production app uses ProGuard/R8.
+    # Only flag as malicious when there is at least one CONFIRMED threat indicator.
     has_malicious_signals = bool(
         yara
         or malicious_count > 0
         or dynamic.get("sms_intercepted")
         or dynamic.get("accessibility_abuse")
         or dynamic.get("overlay_attack_detected")
-        or static.get("obfuscation_detected")
     )
 
     threat_level = "MALICIOUS" if has_malicious_signals else "POTENTIALLY BENIGN"
@@ -181,7 +182,11 @@ def _build_recommendations(data: Dict[str, Any], has_malicious_signals: bool) ->
 
 
 def _compute_confidence(data: Dict) -> float:
-    """Confidence is earned by actual malicious evidence — starts at 0.0."""
+    """Confidence is earned by actual malicious evidence — starts at 0.0.
+    Obfuscation (ProGuard/R8) and dynamic code loading (DexClassLoader / Unity)
+    are both normal in production APKs and contribute ZERO confidence here.
+    Only confirmed dynamic signals or threat-intel matches carry real weight.
+    """
     score = 0.0
     static = data.get("static", {})
     dynamic = data.get("dynamic", {})
@@ -189,8 +194,8 @@ def _compute_confidence(data: Dict) -> float:
 
     if static.get("yara_matches"):
         score += 0.35
-    if static.get("obfuscation_detected"):
-        score += 0.10
+    # obfuscation_detected intentionally excluded: ProGuard/R8 is standard
+    # dynamic_code_loading intentionally excluded: Unity/game SDKs use DexClassLoader
     if dynamic.get("sms_intercepted"):
         score += 0.20
     if dynamic.get("accessibility_abuse"):
@@ -199,7 +204,5 @@ def _compute_confidence(data: Dict) -> float:
         score += 0.15
     if ti.get("malicious_count", 0) > 0:
         score += 0.15
-    if static.get("dynamic_code_loading"):
-        score += 0.10
 
     return min(round(score, 2), 0.99)

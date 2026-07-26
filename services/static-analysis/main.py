@@ -165,25 +165,32 @@ async def analyze(ref: APKRef):
 
 
 def _stub_result(apk_id: str) -> dict:
+    """
+    Returned when MinIO fetch fails or analysis crashes.
+    MUST be a neutral/empty result — never fake malware signals.
+    A Hello World APK that fails to analyze should NOT score 85.
+    """
     return {
         "apk_id": apk_id,
         "_stub": True,
-        "permissions": [
-            {"name": "READ_SMS", "full": "android.permission.READ_SMS", "dangerous": True},
-            {"name": "RECEIVE_SMS", "full": "android.permission.RECEIVE_SMS", "dangerous": True},
-            {"name": "BIND_ACCESSIBILITY_SERVICE", "full": "android.permission.BIND_ACCESSIBILITY_SERVICE", "dangerous": True},
-            {"name": "INTERNET", "full": "android.permission.INTERNET", "dangerous": False},
-        ],
-        "dangerous_permission_count": 3,
-        "manifest": {"package_name": "com.unknown.app", "min_sdk": "21", "target_sdk": "33"},
-        "suspicious_apis": ["getDeviceId", "sendTextMessage", "DexClassLoader"],
-        "obfuscation_detected": True,
-        "dynamic_code_loading": True,
-        "hardcoded_urls": ["http://185.220.101.45/c2/"],
-        "hardcoded_ips": ["185.220.101.45"],
-        "yara_matches": ["BankingTrojan_SMSInterceptor", "BankingTrojan_OverlayAttack"],
-        "risk_indicator_count": 12,
-        "iocs": {"domains": ["185.220.101.45"], "ips": ["185.220.101.45"]},
+        "_stub_reason": "Analysis unavailable — APK could not be fetched or parsed",
+        "permissions": [],
+        "dangerous_permission_count": 0,
+        "manifest": {"package_name": "unknown", "min_sdk": "unknown", "target_sdk": "unknown"},
+        "suspicious_apis": [],
+        "obfuscation_detected": False,
+        "dynamic_code_loading": False,
+        "hardcoded_urls": [],
+        "hardcoded_ips": [],
+        "yara_matches": [],
+        "risk_indicator_count": 0,
+        "iocs": {"domains": [], "ips": []},
+        "quark_crime_count": 0,
+        "quark_max_confidence": 0.0,
+        "quark_avg_confidence": 0.0,
+        "quark_banking_crime": False,
+        "quark_sms_crime": False,
+        "quark_crimes": [],
     }
 
 

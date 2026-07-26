@@ -129,6 +129,52 @@ def _is_public_ip(ip_str: str) -> bool:
         return False
 
 
+# Known safe domains from legitimate ad SDKs, analytics, game engines, and CDNs.
+# URLs matching these domains are excluded from hardcoded_url_count so that
+# apps like Ludo, Candy Crush, etc. are not falsely flagged for embedding ad SDK URLs.
+_SAFE_DOMAINS = {
+    # Google / Firebase
+    "googleapis.com", "gstatic.com", "google.com", "firebaseio.com",
+    "firebase.google.com", "googletagmanager.com", "doubleclick.net",
+    "googlesyndication.com", "googleadservices.com", "admob.com",
+    # Facebook / Meta
+    "facebook.com", "fbcdn.net", "instagram.com", "graph.facebook.com",
+    "an.facebook.com",
+    # Unity
+    "unity3d.com", "unityads.unity3d.com", "unity.com",
+    "dashboard.unity3d.com",
+    # Ad Networks & Analytics
+    "applovin.com", "mopub.com", "ironsrc.com", "startapp.com",
+    "chartboost.com", "vungle.com", "adcolony.com", "inmobi.com",
+    "tapjoy.com", "fyber.com", "mintegral.com",
+    # Attribution / Analytics SDKs
+    "adjust.com", "appsflyer.com", "branch.io", "kochava.com",
+    "amplitude.com", "mixpanel.com", "segment.com", "clevertap.com",
+    # App stores & CDN
+    "play.google.com", "apple.com", "amazonaws.com", "cloudfront.net",
+    "akamaihd.net", "fastly.net",
+    # Crash reporting
+    "crashlytics.com", "bugsnag.com", "sentry.io", "datadog.com",
+}
+
+
+def _is_safe_url(url: str) -> bool:
+    """Return True if the URL belongs to a known safe ad/analytics/SDK domain."""
+    try:
+        # Extract hostname from URL (strip scheme and path)
+        host = url.split("://", 1)[1].split("/")[0].lower().strip()
+        # Remove port if present
+        host = host.split(":")[0]
+        # Check if host or any parent domain is in the safe list
+        parts = host.split(".")
+        for i in range(len(parts) - 1):
+            if ".".join(parts[i:]) in _SAFE_DOMAINS:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def extract_strings(a, d) -> Dict:
     urls, ips = [], []
     url_re = re.compile(r'https?://[^\s"\'<>]{8,}')
@@ -138,7 +184,10 @@ def extract_strings(a, d) -> Dict:
         for dex in d:
             for s in dex.get_strings():
                 text = str(s)
-                urls += url_re.findall(text)
+                found_urls = url_re.findall(text)
+                # Filter out known safe SDK/ad-network domains so games and
+                # ad-supported apps don't get falsely flagged
+                urls += [u for u in found_urls if not _is_safe_url(u)]
                 # Only include publicly routable IPs — skip 127.x, 192.168.x, 0.0.0.0, etc.
                 ips += [ip for ip in ip_re.findall(text) if _is_public_ip(ip)]
     except Exception as exc:
@@ -161,6 +210,123 @@ def run_yara_scan(apk_path: str, rules_dir: str) -> List[str]:
     return matches
 
 
+# Keywords used to identify high-risk banking/SMS crime descriptions from Quark rules
+_BANKING_KEYWORDS = ["overlay", "phish", "banking", "credential", "login", "inject"]
+_SMS_KEYWORDS     = ["sms", "otp", "text message", "intercept", "forward"]
+
+
+def run_quark_analysis(apk_path: str) -> Dict:
+    """
+    Run QuarkEngine behavioral crime scoring on an APK.
+
+    QuarkEngine uses Order Theory — it traces API call sequences at the Dalvik
+    bytecode level to detect criminal behaviours (e.g. getDeviceId → sendTextMessage).
+    This works even on obfuscated code and gives near-zero scores to benign apps
+    like calculators that have permissions but no malicious API sequences.
+
+    Returns a dict with:
+      - quark_crime_count      : number of confirmed crimes (confidence >= 60%)
+      - quark_max_confidence   : highest single crime confidence (0.0 – 1.0)
+      - quark_avg_confidence   : average confidence across all detected crimes
+      - quark_banking_crime    : True if any high-confidence banking-related crime
+      - quark_sms_crime        : True if any high-confidence SMS/OTP-related crime
+      - quark_crimes           : list of crime detail dicts for the report
+    """
+    result = {
+        "quark_crime_count": 0,
+        "quark_max_confidence": 0.0,
+        "quark_avg_confidence": 0.0,
+        "quark_banking_crime": False,
+        "quark_sms_crime": False,
+        "quark_crimes": [],
+    }
+
+    try:
+        from quark.report import Report
+
+        # QuarkEngine v26+ API: analysis(apk, rule) — one rule file at a time.
+        # Rules are downloaded at build time by freshquark into ~/.quark/quark-rules/
+        rules_dir = Path.home() / ".quark" / "quark-rules"
+
+        if not rules_dir.exists() or not any(rules_dir.glob("*.json")):
+            logger.warning("QuarkEngine: no rules found at %s — was freshquark run at build time?", rules_dir)
+            return result
+
+        # Only run rules relevant to banking malware to keep analysis fast.
+        # Running all 400+ rules on every APK would take minutes.
+        RELEVANT_KEYWORDS = [
+            "sms", "otp", "telephony", "sendtext",    # SMS interception
+            "overlay", "systemalert", "alertwindow",   # Overlay attacks
+            "accessibility", "performglobal",           # ATS abuse
+            "deviceid", "imei", "subscriberId",        # Device fingerprinting
+            "dexclass", "classloader", "reflect",      # Dynamic loading
+            "cipher", "aes", "encrypt", "base64",      # Crypto (data exfil)
+            "credential", "banking", "phish",          # Banking fraud
+            "contact", "calllog", "location",          # Data theft
+        ]
+
+        all_rules = list(rules_dir.glob("*.json"))
+        relevant_rules = [
+            r for r in all_rules
+            if any(kw in r.stem.lower() for kw in RELEVANT_KEYWORDS)
+        ]
+        # Fallback: if keyword filter matches nothing, use all rules (small APK set)
+        rules_to_run = relevant_rules if relevant_rules else all_rules[:50]
+
+        logger.info("QuarkEngine: running %d/%d rules on %s", len(rules_to_run), len(all_rules), apk_path)
+
+        confirmed = []
+        for rule_file in rules_to_run:
+            try:
+                report = Report()
+                report.analysis(apk_path, str(rule_file))
+                crimes = report.get_report("json") or []
+
+                for crime in crimes:
+                    raw_conf = str(crime.get("confidence", "0%")).replace("%", "").strip()
+                    try:
+                        confidence = float(raw_conf) / 100.0
+                    except ValueError:
+                        confidence = 0.0
+
+                    if confidence < 0.6:
+                        continue
+
+                    description = str(crime.get("crime", "")).lower()
+                    confirmed.append({
+                        "crime": crime.get("crime", ""),
+                        "confidence": round(confidence, 4),
+                        "permissions": crime.get("permissions", []),
+                        "native_api": crime.get("native_api", []),
+                    })
+                    if any(kw in description for kw in _BANKING_KEYWORDS):
+                        result["quark_banking_crime"] = True
+                    if any(kw in description for kw in _SMS_KEYWORDS):
+                        result["quark_sms_crime"] = True
+
+            except Exception:
+                continue   # skip individual rule failures silently
+
+        if confirmed:
+            confidences = [c["confidence"] for c in confirmed]
+            result["quark_crime_count"]    = len(confirmed)
+            result["quark_max_confidence"] = round(max(confidences), 4)
+            result["quark_avg_confidence"] = round(sum(confidences) / len(confidences), 4)
+            result["quark_crimes"]         = confirmed[:20]
+
+        logger.info(
+            "QuarkEngine: %d confirmed crimes (max conf=%.2f) for %s",
+            result["quark_crime_count"], result["quark_max_confidence"], apk_path,
+        )
+
+    except ImportError:
+        logger.warning("quark-engine not installed — skipping behavioral analysis")
+    except Exception as exc:
+        logger.warning("QuarkEngine analysis failed: %s", exc)
+
+    return result
+
+
 def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
     try:
         a, d, dx = _parse_apk(apk_path)
@@ -173,6 +339,9 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
             "hardcoded_urls": [], "hardcoded_ips": [],
             "yara_matches": [], "risk_indicator_count": 0,
             "iocs": {"domains": [], "ips": []},
+            "quark_crime_count": 0, "quark_max_confidence": 0.0,
+            "quark_avg_confidence": 0.0, "quark_banking_crime": False,
+            "quark_sms_crime": False, "quark_crimes": [],
         }
 
     permissions = extract_permissions(a)
@@ -182,6 +351,7 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
     dynamic_loading = detect_dynamic_code_loading(dx)
     strings = extract_strings(a, d)
     yara_matches = run_yara_scan(apk_path, rules_dir)
+    quark_results = run_quark_analysis(apk_path)
 
     dangerous = [p for p in permissions if p["dangerous"]]
     risk_score = len(dangerous) + len(suspicious_apis) + len(yara_matches) * 3
@@ -205,6 +375,13 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
             "domains": list({u.split("/")[2] for u in strings["hardcoded_urls"] if "://" in u}),
             "ips": strings["hardcoded_ips"],
         },
+        # QuarkEngine behavioral crime scores
+        "quark_crime_count":    quark_results["quark_crime_count"],
+        "quark_max_confidence": quark_results["quark_max_confidence"],
+        "quark_avg_confidence": quark_results["quark_avg_confidence"],
+        "quark_banking_crime":  quark_results["quark_banking_crime"],
+        "quark_sms_crime":      quark_results["quark_sms_crime"],
+        "quark_crimes":         quark_results["quark_crimes"],
     }
 
 

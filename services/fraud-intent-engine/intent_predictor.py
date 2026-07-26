@@ -41,13 +41,17 @@ def predict_intent(analysis_summary: str, indicators: Dict[str, Any]) -> Dict[st
 
     # Only call LLM if there are actual malicious signals — otherwise rule-based
     # is sufficient and faster (no Ollama call needed for clean APKs).
+    # Obfuscation (ProGuard/R8) is present in virtually every production APK
+    # and is NOT a malicious signal on its own. Calling the LLM for obfuscated
+    # but otherwise clean apps causes hallucinated labels like "otp_interception".
+    # Only call the LLM when at least ONE confirmed threat indicator is present.
     has_signals = any([
         features["sms_interception"],
         features["accessibility_abuse"],
         features["overlay_attack"],
         features["c2_connections"] > 0,
         len(features["yara_matches"]) > 0,
-        features["obfuscation"],
+        # NOTE: obfuscation deliberately excluded — see comment above
     ])
 
     if has_signals:
@@ -94,10 +98,11 @@ def _rule_based_intent(features: Dict) -> Dict:
     obfuscation = features["obfuscation"]
     perms = features["dangerous_permissions"]
 
-    # Check if ANY real malicious signal exists.
-    # Previously: defaulted to "credential_theft" for ANY app with ≥1 dangerous permission.
-    # A calculator, camera app, or file manager all have dangerous permissions but are benign.
-    has_any_signal = sms or accessibility or overlay or c2 > 0 or len(yara) > 0 or obfuscation
+    # Check if ANY confirmed malicious signal exists.
+    # Obfuscation (ProGuard/R8) is deliberately EXCLUDED — virtually every
+    # production APK uses it.  Including it caused Hello World apps to be
+    # classified as "credential_theft" / "otp_interception".
+    has_any_signal = sms or accessibility or overlay or c2 > 0 or len(yara) > 0
 
     if not has_any_signal:
         # Truly clean app — no malicious runtime or static signals
@@ -126,13 +131,14 @@ def _rule_based_intent(features: Dict) -> Dict:
         secondary = ["device_takeover"]
         rationale = "Active C2 communication suggests data collection and exfiltration."
     else:
-        # Has YARA / obfuscation but no dynamic signals — flag but lower confidence
+        # Has YARA matches but no dynamic signals — flag but at lower confidence.
+        # NOTE: this branch no longer triggers for obfuscation-only apps (excluded above).
         primary = "credential_theft"
         secondary = []
-        rationale = "Static indicators (obfuscation/YARA) suggest potential credential harvesting capability."
+        rationale = "YARA signatures matched known malware patterns. No confirmed dynamic behaviour yet."
 
-    # Confidence based on how many real signals are present, not just permission count
-    signal_count = sum([bool(sms), bool(accessibility), bool(overlay), c2 > 0, len(yara) > 0, bool(obfuscation)])
+    # Confidence based on confirmed threat signals only — obfuscation excluded
+    signal_count = sum([bool(sms), bool(accessibility), bool(overlay), c2 > 0, len(yara) > 0])
     confidence = min(0.4 + 0.1 * signal_count, 0.95)
 
     return {

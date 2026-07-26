@@ -23,9 +23,9 @@ class ScoringRequest(BaseModel):
 def score(req: ScoringRequest):
     try:
         data = req.dict()
-        features = extract_features(data)
-        risk_score = predict_score(features)
-        malware_class = predict_class(features)
+        features = extract_features(data)          # 16 features — for heuristic
+        risk_score = predict_score(features, data)  # XGBoost uses 12 internally
+        malware_class = predict_class(features, data)
         severity_info = classify(risk_score)
         shap_values = explain_score(features)
 
