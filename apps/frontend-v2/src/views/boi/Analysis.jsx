@@ -31,12 +31,14 @@ import {
 } from '@tabler/icons-react';
 
 import MainCard from 'ui-component/cards/MainCard';
+import SkeletonPopularCard from 'ui-component/cards/Skeleton/PopularCard';
 import { gridSpacing } from 'store/constant';
 import { downloadPdf, getAnalysis, getAnalysisStatus, getReport } from 'api/client';
 import RiskGauge from './components/RiskGauge';
 import AttackChainGraph from './components/AttackChainGraph';
 import DecompiledView from './components/DecompiledView';
 import { PageEnter, StaggerItem, TabFade } from './components/Motion';
+import { classificationToChipColor } from './utils/status';
 
 const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Decompiled Source'];
 
@@ -57,20 +59,14 @@ function FlagRow({ label, value, theme }) {
   );
 }
 
-function SignalChip({ icon: Icon, label, color }) {
+function SignalChip({ icon: Icon, label, color = 'primary' }) {
   return (
     <Chip
       icon={<Icon size={14} />}
       label={label}
       size="small"
-      sx={{
-        fontWeight: 600,
-        color,
-        bgcolor: alpha(color, 0.08),
-        border: `1px solid ${alpha(color, 0.25)}`,
-        '& .MuiChip-icon': { color }
-      }}
-      variant="outlined"
+      color={color}
+      sx={{ fontWeight: 600, '& .MuiChip-icon': { color: 'inherit' } }}
     />
   );
 }
@@ -166,8 +162,8 @@ export default function BoiAnalysis() {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
-        <CircularProgress />
+      <Box sx={{ p: 1 }}>
+        <SkeletonPopularCard />
       </Box>
     );
   }
@@ -211,7 +207,10 @@ export default function BoiAnalysis() {
             <Button variant="outlined" onClick={handleDownloadPdf}>
               Download PDF
             </Button>
-            <Chip label={risk.classification || analysis.status} color="primary" />
+            <Chip
+              label={risk.classification || analysis.status}
+              color={classificationToChipColor(risk.classification || risk.severity || analysis.status)}
+            />
           </Stack>
         </Stack>
       </Box>
@@ -231,26 +230,10 @@ export default function BoiAnalysis() {
               {risk.classification || 'Pending'} — Detected through static analysis, dynamic sandbox, and AI investigation
             </Typography>
             <Stack direction="row" flexWrap="wrap" gap={1}>
-              <SignalChip
-                icon={IconAlertTriangle}
-                label={`${sa.yara_matches?.length || 0} YARA Matches`}
-                color={theme.palette.error.main}
-              />
-              <SignalChip
-                icon={IconNetwork}
-                label={`${da.network_requests?.length || 0} C2 Connections`}
-                color={theme.palette.orange.dark}
-              />
-              <SignalChip
-                icon={IconCode}
-                label={`${sa.suspicious_apis?.length || 0} Suspicious APIs`}
-                color={theme.palette.warning.dark}
-              />
-              <SignalChip
-                icon={IconLock}
-                label={`${ti.mitre_techniques?.length || 0} MITRE Techniques`}
-                color={theme.palette.primary.main}
-              />
+              <SignalChip icon={IconAlertTriangle} label={`${sa.yara_matches?.length || 0} YARA Matches`} color="error" />
+              <SignalChip icon={IconNetwork} label={`${da.network_requests?.length || 0} C2 Connections`} color="warning" />
+              <SignalChip icon={IconCode} label={`${sa.suspicious_apis?.length || 0} Suspicious APIs`} color="warning" />
+              <SignalChip icon={IconLock} label={`${ti.mitre_techniques?.length || 0} MITRE Techniques`} color="primary" />
             </Stack>
           </Grid>
         </Grid>
@@ -327,7 +310,8 @@ export default function BoiAnalysis() {
                             p: 1.5,
                             borderRadius: 2,
                             border: `1px solid ${theme.palette.divider}`,
-                            bgcolor: alpha(theme.palette.primary.main, 0.02)
+                            bgcolor: 'secondary.light',
+                            '&:hover': { bgcolor: alpha(theme.palette.secondary.main, 0.12) }
                           }}
                         >
                           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
@@ -349,7 +333,6 @@ export default function BoiAnalysis() {
                               size="small"
                               label={dangerous ? 'DANGEROUS' : 'NORMAL'}
                               color={dangerous ? 'error' : 'success'}
-                              variant="outlined"
                             />
                           </Stack>
                         </Box>
@@ -367,7 +350,6 @@ export default function BoiAnalysis() {
                       key={typeof y === 'string' ? y : JSON.stringify(y)}
                       label={typeof y === 'string' ? y : y.rule || JSON.stringify(y)}
                       color="error"
-                      variant="outlined"
                       sx={{ fontFamily: 'monospace' }}
                     />
                   ))}
@@ -422,7 +404,7 @@ export default function BoiAnalysis() {
                           p: 2,
                           borderRadius: 2,
                           border: `1px solid ${theme.palette.divider}`,
-                          bgcolor: alpha(theme.palette.secondary.main, 0.04)
+                          bgcolor: 'secondary.light'
                         }}
                       >
                         <Typography variant="caption" color="text.secondary">
@@ -442,11 +424,7 @@ export default function BoiAnalysis() {
                   <MainCard
                     title="SMS / OTP Interception"
                     secondary={
-                      <Chip
-                        size="small"
-                        label={da.sms_intercepted ? 'DETECTED' : 'Clean'}
-                        color={da.sms_intercepted ? 'error' : 'success'}
-                      />
+                      <Chip size="small" label={da.sms_intercepted ? 'DETECTED' : 'Clean'} color={da.sms_intercepted ? 'error' : 'success'} />
                     }
                   >
                     {(da.sms_content_samples || []).length ? (
@@ -606,9 +584,9 @@ export default function BoiAnalysis() {
                 title="AI Investigation Report"
                 secondary={
                   <Stack direction="row" spacing={1}>
-                    <Chip size="small" label="llama3:8b" color="primary" variant="outlined" />
+                    <Chip size="small" label="llama3:8b" color="primary" />
                     {aiData.classification && <Chip size="small" label={aiData.classification} color="error" />}
-                    {confidence != null && <Chip size="small" label={`Confidence: ${confidence}%`} />}
+                    {confidence != null && <Chip size="small" label={`Confidence: ${confidence}%`} color="secondary" />}
                   </Stack>
                 }
               >
@@ -621,7 +599,7 @@ export default function BoiAnalysis() {
                       lineHeight: 1.8,
                       p: 2,
                       borderRadius: 2,
-                      bgcolor: alpha(theme.palette.primary.main, 0.03),
+                      bgcolor: 'secondary.light',
                       border: `1px solid ${theme.palette.divider}`
                     }}
                   >
@@ -649,7 +627,7 @@ export default function BoiAnalysis() {
                                 p: 2,
                                 borderRadius: 2,
                                 border: `1px solid ${theme.palette.divider}`,
-                                bgcolor: alpha(theme.palette.secondary.main, 0.04),
+                                bgcolor: 'secondary.light',
                                 height: '100%'
                               }}
                             >
@@ -679,7 +657,7 @@ export default function BoiAnalysis() {
                         mb: 1,
                         borderRadius: 2,
                         border: `1px solid ${theme.palette.divider}`,
-                        bgcolor: alpha(theme.palette.primary.main, 0.02)
+                        bgcolor: 'secondary.light'
                       }}
                     >
                       <Typography color="primary" fontWeight={700}>
@@ -697,7 +675,7 @@ export default function BoiAnalysis() {
                 <MainCard title="MITRE ATT&CK Mappings">
                   <Stack direction="row" flexWrap="wrap" gap={1}>
                     {aiData.mitre_mappings.map((t, i) => (
-                      <Chip key={i} label={t} color="error" variant="outlined" sx={{ fontFamily: 'monospace' }} />
+                      <Chip key={i} label={t} color="error" sx={{ fontFamily: 'monospace' }} />
                     ))}
                   </Stack>
                 </MainCard>

@@ -2,15 +2,9 @@ import { useEffect, useRef } from 'react';
 
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
-import Typography from '@mui/material/Typography';
-import { alpha, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 
-function severityColor(score, theme) {
-  if (score < 30) return theme.palette.success.dark;
-  if (score < 55) return theme.palette.warning.dark;
-  if (score < 75) return theme.palette.orange.dark;
-  return theme.palette.error.main;
-}
+import { riskScoreColor, severityToChipColor } from '../utils/status';
 
 function severityLabel(score) {
   if (score < 30) return 'Safe';
@@ -22,8 +16,9 @@ function severityLabel(score) {
 export default function RiskGauge({ score = 0, classification, compact = false }) {
   const theme = useTheme();
   const arcRef = useRef(null);
-  const color = severityColor(score, theme);
+  const color = riskScoreColor(score, theme);
   const label = classification || severityLabel(score);
+  const chipColor = severityToChipColor(label);
 
   const size = compact ? 160 : 220;
   const cx = size / 2;
@@ -33,6 +28,7 @@ export default function RiskGauge({ score = 0, classification, compact = false }
   const circumference = Math.PI * r;
   const dashOffset = circumference - (score / 100) * circumference;
   const track = theme.palette.grey[200];
+  const fontFamily = theme.typography.fontFamily;
 
   useEffect(() => {
     if (!arcRef.current) return;
@@ -79,7 +75,7 @@ export default function RiskGauge({ score = 0, classification, compact = false }
             y={cy - (compact ? 6 : 8)}
             textAnchor="middle"
             fill={theme.palette.text.primary}
-            fontFamily="Roboto, sans-serif"
+            fontFamily={fontFamily}
             fontSize={compact ? 28 : 40}
             fontWeight="800"
           >
@@ -90,7 +86,7 @@ export default function RiskGauge({ score = 0, classification, compact = false }
             y={cy + (compact ? 12 : 16)}
             textAnchor="middle"
             fill={theme.palette.text.secondary}
-            fontFamily="Roboto, sans-serif"
+            fontFamily={fontFamily}
             fontSize={compact ? 10 : 12}
             fontWeight="500"
           >
@@ -98,18 +94,7 @@ export default function RiskGauge({ score = 0, classification, compact = false }
           </text>
         </svg>
       </Box>
-      <Chip
-        label={label}
-        size="small"
-        sx={{
-          fontWeight: 700,
-          letterSpacing: 0.4,
-          color,
-          bgcolor: alpha(color, 0.1),
-          border: `1px solid ${alpha(color, 0.35)}`
-        }}
-        variant="outlined"
-      />
+      <Chip label={label} size="small" color={chipColor} sx={{ fontWeight: 700, letterSpacing: 0.4 }} />
     </Box>
   );
 }
