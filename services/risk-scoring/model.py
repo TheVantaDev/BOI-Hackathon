@@ -1,3 +1,9 @@
+"""
+model.py — Risk scoring using DREBIN-215 raw feature XGBoost model.
+
+Model trained with binary:logistic outputs a single p(malicious) float.
+Score formula:  risk_score = p_malicious × 90.0   (matches Colab Cell 8)
+"""
 import logging
 import os
 from pathlib import Path
@@ -5,15 +11,19 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from feature_extractor import extract_features, extract_xgboost_features, FEATURE_NAMES, XGBOOST_FEATURE_NAMES
+from feature_extractor import (
+    extract_features,
+    extract_xgboost_features,
+    _load_feature_names,
+    FEATURE_NAMES,
+)
 
 logger = logging.getLogger(__name__)
+
 MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.json"))
 
-# Severity scores per class — must match training order in notebook
-# CLASSES = ["Benign", "Riskware", "Adware", "SMS", "Banking"]
-SEVERITY_VEC = np.array([5, 35, 55, 75, 95], dtype=np.float32)
-CLASS_NAMES = ["Benign", "Riskware", "Adware", "SMS", "Banking"]
+CLASS_NAMES  = ["Benign", "Malicious"]
+SEVERITY_MAX = 90.0   # p_malicious × 90.0
 
 _model = None
 
@@ -27,13 +37,70 @@ def _load_model():
         import xgboost as xgb
         _model = xgb.Booster()
         _model.load_model(str(MODEL_PATH))
+        # Pre-load feature names so the first request is fast
+        _load_feature_names()
         logger.info("Loaded XGBoost model from %s", MODEL_PATH)
     else:
-        logger.warning("No trained model found at %s — using heuristic scoring", MODEL_PATH)
+        logger.warning("No model at %s — using heuristic scoring", MODEL_PATH)
         _model = "heuristic"
 
     return _model
 
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _get_p_malicious(model, raw_data: dict) -> float:
+    """
+    Run the XGBoost model and return p(malicious) in [0, 1].
+
+    The new model uses binary:logistic so model.predict() returns a
+    1-D array of shape (n_samples,) — one probability per sample.
+    """
+    import xgboost as xgb
+    from feature_extractor import DREBIN_FEATURE_NAMES, _load_feature_names
+
+    feature_names = _load_feature_names()
+    xgb_features  = extract_xgboost_features(raw_data)
+
+    dmatrix = xgb.DMatrix(
+        xgb_features.reshape(1, -1),
+        feature_names=feature_names if feature_names else None,
+    )
+
+    best_iter = getattr(model, "best_iteration", 0)
+    kwargs = {"iteration_range": (0, best_iter + 1)} if best_iter > 0 else {}
+
+    raw = model.predict(dmatrix, **kwargs)
+    raw = np.array(raw).ravel()
+
+    # binary:logistic → shape (1,): single p(malicious)
+    if raw.shape[0] == 1:
+        return float(raw[0])
+
+    # Fallback: multi:softprob with 2 classes → shape (1, 2)
+    proba = raw.reshape(-1, 2)
+    return float(proba[0][1])
+
+
+def _confirmed_signal(raw_data: dict) -> bool:
+    """True when at least one hard runtime/IOC threat signal is confirmed."""
+    static  = raw_data.get("static",  {})
+    dynamic = raw_data.get("dynamic", {})
+    ti      = raw_data.get("threat_intel", {})
+    return bool(
+        static.get("yara_matches")
+        or dynamic.get("sms_intercepted")
+        or dynamic.get("sms_interception")         # dynamic analyzer field variant
+        or dynamic.get("accessibility_abuse")
+        or dynamic.get("overlay_attack_detected")
+        or dynamic.get("overlay_attacks")           # dynamic analyzer field variant
+        or ti.get("malicious_count", 0) > 0
+        or any(isinstance(r, dict) and r.get("suspicious")
+               for r in dynamic.get("network_requests", []))
+    )
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
 
 def predict_score(features: np.ndarray, _raw_data: dict = None) -> float:
     model = _load_model()
@@ -42,50 +109,23 @@ def predict_score(features: np.ndarray, _raw_data: dict = None) -> float:
         return _heuristic_score(features)
 
     try:
-        import xgboost as xgb
+        p_mal = _get_p_malicious(model, _raw_data or {})
 
-        # XGBoost must receive exactly the 12 features it was trained on.
-        # Pass the raw data dict so we can extract the correct 12-feature slice.
-        # 'features' here may be 16-wide (heuristic); we rebuild the 12-wide version.
-        xgb_features = extract_xgboost_features(_raw_data) if _raw_data else features[:12]
-        dmatrix = xgb.DMatrix(xgb_features.reshape(1, -1), feature_names=XGBOOST_FEATURE_NAMES)
+        # score = p(malicious) × 90  — exact formula from Colab Cell 8
+        risk_score = round(min(max(p_mal * SEVERITY_MAX, 0.0), 100.0), 1)
 
-        # model was trained with multi:softprob — output shape is (n_samples, n_classes)
-        best_iteration = getattr(model, 'best_iteration', 0)
-        kwargs = {}
-        if best_iteration > 0:
-            kwargs["iteration_range"] = (0, best_iteration + 1)
-        proba = model.predict(dmatrix, **kwargs)
-        proba = np.array(proba).reshape(-1, len(CLASS_NAMES))
-
-        # weighted sum: proba[0] @ severity_vec gives a continuous 0-100 risk score
-        risk_score = float(proba[0] @ SEVERITY_VEC)
-        risk_score = round(min(max(risk_score, 0.0), 100.0), 1)
-
-        # ── Safety cap: mirror the heuristic's false-positive guard ──────────
-        # XGBoost was trained on a malware-heavy dataset and tends to give
-        # inflated scores when ALL confirmed threat signals are zero (clean APKs,
-        # Hello World apps, internal tools).  If there is NO confirmed dynamic
-        # evidence we cap at 40 — the same ceiling the heuristic uses.
-        if _raw_data is not None:
-            static  = _raw_data.get("static",  {})
-            dynamic = _raw_data.get("dynamic", {})
-            ti      = _raw_data.get("threat_intel", {})
-            has_confirmed_signal = bool(
-                static.get("yara_matches")               # YARA hit
-                or dynamic.get("sms_intercepted")         # SMS/OTP stolen
-                or dynamic.get("accessibility_abuse")     # ATS / overlay
-                or dynamic.get("overlay_attack_detected") # UI overlay
-                or ti.get("malicious_count", 0) > 0       # known bad IOC
-                or len([r for r in dynamic.get("network_requests", [])
-                        if isinstance(r, dict) and r.get("suspicious")]) > 0  # C2
-            )
-            if not has_confirmed_signal:
-                risk_score = min(risk_score, 40.0)
+        # Safety cap: if ZERO confirmed runtime/IOC signals, cap at 35.
+        # Real banking trojans always trip at least one: SMS intercept,
+        # accessibility abuse, C2 connection, YARA match, or known-bad IOC.
+        # A calculator with SYSTEM_ALERT_WINDOW has none of these.
+        if _raw_data is not None and not _confirmed_signal(_raw_data):
+            capped = min(risk_score, 35.0)
+            if capped < risk_score:
                 logger.info(
-                    "XGBoost score capped at 40 (no confirmed signals): raw=%.1f → %.1f",
-                    float(proba[0] @ SEVERITY_VEC), risk_score
+                    "Score capped at 35 (no confirmed signals): %.1f → %.1f",
+                    risk_score, capped,
                 )
+            risk_score = capped
 
         return risk_score
 
@@ -101,22 +141,16 @@ def predict_class(features: np.ndarray, _raw_data: dict = None) -> Dict:
         return {"class": "Unknown", "probabilities": {}}
 
     try:
-        import xgboost as xgb
-
-        xgb_features = extract_xgboost_features(_raw_data) if _raw_data else features[:12]
-        dmatrix = xgb.DMatrix(xgb_features.reshape(1, -1), feature_names=XGBOOST_FEATURE_NAMES)
-        best_iteration = getattr(model, 'best_iteration', 0)
-        kwargs = {}
-        if best_iteration > 0:
-            kwargs["iteration_range"] = (0, best_iteration + 1)
-        proba = model.predict(dmatrix, **kwargs)
-        proba = np.array(proba).reshape(-1, len(CLASS_NAMES))[0]
-
-        pred_idx = int(np.argmax(proba))
+        p_mal = _get_p_malicious(model, _raw_data or {})
+        p_ben = 1.0 - p_mal
+        pred  = "Malicious" if p_mal >= 0.5 else "Benign"
         return {
-            "class": CLASS_NAMES[pred_idx],
-            "confidence": round(float(proba[pred_idx]), 4),
-            "probabilities": {cls: round(float(p), 4) for cls, p in zip(CLASS_NAMES, proba)},
+            "class":         pred,
+            "confidence":    round(max(p_mal, p_ben), 4),
+            "probabilities": {
+                "Benign":    round(p_ben, 4),
+                "Malicious": round(p_mal, 4),
+            },
         }
     except Exception as exc:
         logger.warning("Class prediction failed: %s", exc)
@@ -124,6 +158,11 @@ def predict_class(features: np.ndarray, _raw_data: dict = None) -> Dict:
 
 
 def explain_score(features: np.ndarray) -> List[Dict]:
+    """
+    SHAP explanation. With 214 features the model can produce per-feature
+    importance values automatically — no manual weight list needed.
+    Falls back to heuristic explanation if SHAP fails.
+    """
     model = _load_model()
 
     if model == "heuristic":
@@ -131,40 +170,39 @@ def explain_score(features: np.ndarray) -> List[Dict]:
 
     try:
         import shap
-        import xgboost as xgb
+        from feature_extractor import _load_feature_names
 
-        explainer = shap.TreeExplainer(model)
-        raw_shap = explainer.shap_values(features.reshape(1, -1))
+        feature_names = _load_feature_names()
+        if len(features) != len(feature_names):
+            raise ValueError(
+                f"Feature vector length {len(features)} != "
+                f"expected {len(feature_names)}"
+            )
 
-        sv = np.asarray(raw_shap) if not isinstance(raw_shap, list) else np.stack(raw_shap, axis=0)
-
-        # Collapse every axis except the one matching len(FEATURE_NAMES)
-        feat_axis = sv.shape.index(len(FEATURE_NAMES))
-        other_axes = tuple(a for a in range(sv.ndim) if a != feat_axis)
-
-        # Use absolute mean for magnitude, signed mean for direction.
-        # Previous bug: computed np.abs().mean() for both — direction was always
-        # "increases_risk" because abs values are never negative.
-        mean_abs_shap  = np.abs(sv).mean(axis=other_axes)   # magnitude
-        mean_sign_shap = sv.mean(axis=other_axes)            # direction (signed)
+        explainer  = shap.TreeExplainer(model)
+        shap_vals  = explainer.shap_values(features.reshape(1, -1))
+        sv         = np.array(shap_vals).ravel()   # (n_features,) for binary
 
         return [
             {
-                "feature": FEATURE_NAMES[i],
-                "value": float(features[i]),
-                "shap_value": round(float(mean_abs_shap[i]), 4),
-                "direction": (
-                    "increases_risk" if mean_sign_shap[i] > 0
-                    else "decreases_risk" if mean_sign_shap[i] < 0
+                "feature":    feature_names[i],
+                "value":      float(features[i]),
+                "shap_value": round(float(abs(sv[i])), 4),
+                "direction":  (
+                    "increases_risk" if sv[i] > 0
+                    else "decreases_risk" if sv[i] < 0
                     else "neutral"
                 ),
             }
-            for i in range(len(FEATURE_NAMES))
+            for i in range(len(feature_names))
         ]
+
     except Exception as exc:
         logger.warning("SHAP explanation failed: %s", exc)
         return _heuristic_explanation(features)
 
+
+# ── Heuristic fallback (runs when no model file present) ─────────────────────
 
 def _heuristic_score(features: np.ndarray) -> float:
     weights = np.array([
@@ -180,52 +218,44 @@ def _heuristic_score(features: np.ndarray) -> float:
         6.0,   # c2_connection_count
         5.0,   # runtime_downloads
         10.0,  # ai_confidence
-        # QuarkEngine behavioral features — high weights because these are
-        # confirmed criminal API sequences, not just static indicators
         10.0,  # quark_crime_count
-        20.0,  # quark_max_confidence  ← strongest single signal
+        20.0,  # quark_max_confidence
         8.0,   # quark_banking_crime
         8.0,   # quark_sms_crime
     ], dtype=np.float32)
 
     normalizers = np.array(
-        [10, 10, 5, 1, 1, 10, 5, 1, 1, 5, 3, 1,
-         10, 1, 1, 1],   # quark: crime_count/10, max_conf already 0-1, binary flags
-        dtype=np.float32
+        [10, 10, 5, 1, 1, 10, 5, 1, 1, 5, 3, 1, 10, 1, 1, 1],
+        dtype=np.float32,
     )
     normalized = np.clip(features / normalizers, 0, 1)
     raw = round(min(float(np.dot(normalized, weights)), 100.0), 1)
 
-    # If ZERO confirmed dynamic threats (no SMS, no accessibility abuse, no C2,
-    # no runtime downloads) AND no YARA matches AND no malicious IOCs
-    # AND no QuarkEngine crimes → cap at 40 (Low Risk / Suspicious at most).
-    # This prevents ad-SDK apps (Ludo, games, OEM tools) with many static
-    # permissions from being falsely flagged as Highly Malicious.
     has_dynamic_signal = (
-        features[7] > 0   # sms_intercepted
-        or features[8] > 0  # accessibility_abuse
-        or features[9] > 0  # c2_connection_count
+        features[7]  > 0  # sms_intercepted
+        or features[8]  > 0  # accessibility_abuse
+        or features[9]  > 0  # c2_connection_count
         or features[10] > 0  # runtime_downloads
-        or features[2] > 0   # yara_match_count
-        or features[6] > 0   # malicious_ioc_count
+        or features[2]  > 0  # yara_match_count
+        or features[6]  > 0  # malicious_ioc_count
         or features[12] > 0  # quark_crime_count
         or features[13] > 0  # quark_max_confidence
     )
     if not has_dynamic_signal:
-        raw = min(raw, 40.0)
+        raw = min(raw, 35.0)
 
     return raw
 
 
-
 def _heuristic_explanation(features: np.ndarray) -> List[Dict]:
     contrib_weights = [4, 3, 8, 10, 8, 2, 12, 15, 15, 6, 5, 10, 10, 20, 8, 8]
+    names = FEATURE_NAMES[:len(features)]
     return [
         {
-            "feature": FEATURE_NAMES[i],
-            "value": float(features[i]),
+            "feature":    names[i],
+            "value":      float(features[i]),
             "shap_value": round(float(features[i]) * contrib_weights[i] / 100, 4),
-            "direction": "increases_risk" if features[i] > 0 else "neutral",
+            "direction":  "increases_risk" if features[i] > 0 else "neutral",
         }
-        for i in range(len(FEATURE_NAMES))
+        for i in range(len(names))
     ]

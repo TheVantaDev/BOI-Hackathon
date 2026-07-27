@@ -639,7 +639,6 @@ async def _run_adb_frida_analysis(
             "sendtextmessage",       # actual SMS send API
             "smsmanager",            # SMS manager class
             "interceptsms",          # explicit interception
-            "otp" ,                  # OTP in context
             "smsmessage.createfrom", # reading incoming SMS
         ])
         overlay_found = any(k in log_text.lower() for k in [

@@ -7,7 +7,7 @@ import ollama
 
 logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
-MODEL = "llama3:8b"
+MODEL = "llama3.2:3b"
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 

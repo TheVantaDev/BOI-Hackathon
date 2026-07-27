@@ -19,7 +19,9 @@ DANGEROUS_PERMISSIONS = {
     "BIND_DEVICE_ADMIN",
     "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE",
     "GET_ACCOUNTS", "USE_CREDENTIALS",
-    "SYSTEM_ALERT_WINDOW",
+    # SYSTEM_ALERT_WINDOW intentionally excluded: used by many legitimate apps
+    # (calculators, screen rulers, floating widgets). Real overlay attacks are
+    # detected by the dynamic sandbox (overlay_attack_detected) and YARA rules.
     "RECEIVE_BOOT_COMPLETED",
     "PACKAGE_USAGE_STATS",
     "REQUEST_INSTALL_PACKAGES",
@@ -111,6 +113,66 @@ def detect_dynamic_code_loading(dx) -> bool:
     except Exception:
         pass
     return False
+
+
+def extract_all_api_classes(dx) -> List[str]:
+    """
+    Extract ALL class and method references the APK calls at the bytecode level.
+
+    This is what the DREBIN dataset captured for each APK — the full set of
+    referenced Android/Java classes and methods. We need the same signals at
+    inference time so the model's 215 features can be matched correctly.
+
+    Returns a list of normalised strings like:
+      'android.telephony.SmsManager'
+      'Runtime.exec'
+      'DexClassLoader'
+      'TelephonyManager.getDeviceId'
+    """
+    found = set()
+    try:
+        for cls in dx.get_classes():
+            raw = cls.get_vm_class().get_name()   # e.g. "Landroid/telephony/SmsManager;"
+            # Normalise Dalvik format → dotted Java name
+            name = raw.lstrip("L").rstrip(";").replace("/", ".")
+            if name.startswith("android.") or name.startswith("javax.") or \
+               name.startswith("java.") or name.startswith("org."):
+                found.add(name)                    # e.g. "android.telephony.SmsManager"
+                short = name.split(".")[-1]         # e.g. "SmsManager"
+                if len(short) > 3:
+                    found.add(short)
+    except Exception as exc:
+        logger.warning("All-API class extraction failed: %s", exc)
+
+    # Also walk method invocations to capture method-level DREBIN features
+    # like Runtime.exec, TelephonyManager.getDeviceId
+    try:
+        for method in dx.get_methods():
+            m = method.get_method()
+            cls_name = str(m.get_class_name()).lstrip("L").rstrip(";").replace("/", ".")
+            meth_name = str(m.get_name())
+            short_cls = cls_name.split(".")[-1]
+            if len(short_cls) > 3 and len(meth_name) > 2:
+                # e.g. "TelephonyManager.getDeviceId"
+                found.add(f"{short_cls}.{meth_name}")
+                found.add(meth_name)   # bare method name: "getDeviceId"
+    except Exception as exc:
+        logger.warning("Method reference extraction failed: %s", exc)
+
+    return list(found)
+
+
+def extract_intent_actions(a) -> List[str]:
+    """Extract intent action strings from the manifest (receivers, services)."""
+    actions = set()
+    try:
+        for receiver in a.get_receivers():
+            actions.add(str(receiver))
+        for intent_filter in a.get_declared_permissions():
+            actions.add(str(intent_filter))
+    except Exception:
+        pass
+    return list(actions)
 
 
 def _is_public_ip(ip_str: str) -> bool:
@@ -347,6 +409,8 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
     permissions = extract_permissions(a)
     manifest = extract_manifest_info(a)
     suspicious_apis = detect_suspicious_apis(dx)
+    all_api_classes = extract_all_api_classes(dx)   # ALL class/method refs for DREBIN matching
+    intent_actions  = extract_intent_actions(a)
     obfuscated = check_obfuscation(dx)
     dynamic_loading = detect_dynamic_code_loading(dx)
     strings = extract_strings(a, d)
@@ -365,6 +429,8 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
         "dangerous_permission_count": len(dangerous),
         "manifest": manifest,
         "suspicious_apis": suspicious_apis,
+        "all_api_classes": all_api_classes,   # full bytecode class/method refs for DREBIN
+        "intent_actions":  intent_actions,     # manifest intent filters
         "obfuscation_detected": obfuscated,
         "dynamic_code_loading": dynamic_loading,
         "hardcoded_urls": strings["hardcoded_urls"],

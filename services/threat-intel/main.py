@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from ioc_lookup import (
     check_domain, check_ip, check_hash,
     check_urls_batch, map_to_mitre,
+    _mitre_from_ioc_findings,
 )
 
 app = FastAPI(title="Threat Intelligence Service")

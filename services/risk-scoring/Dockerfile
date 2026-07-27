@@ -7,8 +7,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Explicitly copy the trained XGBoost model into the image
+# Copy model files — both are required:
+#   xgb_risk_model.json       : trained XGBoost weights
+#   drebin_feature_names.json : exact 214 feature names used at training time
+RUN mkdir -p /app/models
 COPY models/xgb_risk_model.json /app/models/xgb_risk_model.json
+COPY models/drebin_feature_names.json /app/models/drebin_feature_names.json
 
 ENV MODEL_PATH=/app/models/xgb_risk_model.json
 
