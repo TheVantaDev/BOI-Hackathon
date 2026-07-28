@@ -15,26 +15,21 @@ import Loader from 'ui-component/Loader';
 import useConfig from 'hooks/useConfig';
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 
-// Slim layout: sidebar + content only (matches classic BOI structure; Berry theme kept)
+// Slim layout: collapsible sidebar + content (Berry theme)
 
 export default function MainLayout() {
   const theme = useTheme();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
 
   const {
-    state: { borderRadius, miniDrawer }
+    state: { borderRadius }
   } = useConfig();
   const { menuMaster, menuMasterLoading } = useGetMenuMaster();
   const drawerOpen = menuMaster?.isDashboardDrawerOpened;
 
+  // Mobile: start closed. Desktop: leave user toggle state alone after first open.
   useEffect(() => {
-    // Always show full sidebar like classic (no mini-drawer chrome)
-    handlerDrawerOpen(true);
-  }, [miniDrawer]);
-
-  useEffect(() => {
-    if (downMD) handlerDrawerOpen(false);
-    else handlerDrawerOpen(true);
+    handlerDrawerOpen(!downMD);
   }, [downMD]);
 
   if (menuMasterLoading) return <Loader />;
@@ -52,9 +47,11 @@ export default function MainLayout() {
             ...theme.typography.commonAvatar,
             ...theme.typography.mediumAvatar,
             color: theme.vars.palette.secondary.dark,
-            background: theme.vars.palette.secondary.light
+            background: theme.vars.palette.secondary.light,
+            cursor: 'pointer'
           }}
           onClick={() => handlerDrawerOpen(true)}
+          aria-label="Open sidebar"
         >
           <IconMenu2 stroke={1.5} size="20px" />
         </Avatar>

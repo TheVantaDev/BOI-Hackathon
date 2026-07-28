@@ -189,7 +189,7 @@ export default function BoiAnalysis() {
       )}
 
       <StaggerItem delayIndex={0}>
-      <Box>
+      <Box className="page-header">
         <Button startIcon={<IconArrowLeft size={16} />} onClick={() => navigate(-1)} sx={{ mb: 1.5 }}>
           Back
         </Button>
@@ -197,7 +197,9 @@ export default function BoiAnalysis() {
           <Box>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
               <IconShield size={22} color={theme.palette.primary.main} />
-              <Typography variant="h2">{analysis.filename || 'APK Analysis'}</Typography>
+              <Typography variant="h2" className="page-heading" sx={{ mb: '0 !important' }}>
+                {analysis.filename || 'APK Analysis'}
+              </Typography>
             </Stack>
             <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color="text.secondary">
               SHA256: {analysis.sha256}
@@ -241,19 +243,20 @@ export default function BoiAnalysis() {
       </StaggerItem>
 
       <StaggerItem delayIndex={2}>
-      <MainCard content={false} sx={{ px: 2, pt: 1 }}>
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile>
+      <MainCard content={false} sx={{ overflow: 'hidden' }}>
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ px: 1, pt: 0.5 }}>
           {TABS.map((t) => (
             <Tab key={t} label={t} />
           ))}
         </Tabs>
         <Divider />
-        <Box sx={{ p: 2.5 }}>
+        <Box sx={{ p: 3 }}>
           <TabFade tabKey={tab}>
           {tab === 0 && (
-            <Grid container spacing={gridSpacing}>
-              <Grid size={{ xs: 12, md: 6 }}>
+            <Grid container spacing={gridSpacing} alignItems="stretch">
+              <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex' }}>
                 <MainCard
+                  sx={{ width: '100%', height: '100%' }}
                   title={
                     <Stack direction="row" spacing={1} alignItems="center">
                       <IconBug size={16} color={theme.palette.error.main} />
@@ -267,8 +270,9 @@ export default function BoiAnalysis() {
                   <FlagRow label="Accessibility Abuse" value={da.accessibility_abuse} theme={theme} />
                 </MainCard>
               </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
+              <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex' }}>
                 <MainCard
+                  sx={{ width: '100%', height: '100%' }}
                   title={
                     <Stack direction="row" spacing={1} alignItems="center">
                       <IconActivity size={16} color={theme.palette.primary.main} />
@@ -309,9 +313,12 @@ export default function BoiAnalysis() {
                           sx={{
                             p: 1.5,
                             borderRadius: 2,
-                            border: `1px solid ${theme.palette.divider}`,
-                            bgcolor: 'secondary.light',
-                            '&:hover': { bgcolor: alpha(theme.palette.secondary.main, 0.12) }
+                            bgcolor: 'grey.50',
+                            transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
+                            '&:hover': {
+                              bgcolor: 'secondary.light',
+                              boxShadow: '0 4px 14px rgba(16, 24, 40, 0.06)'
+                            }
                           }}
                         >
                           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
@@ -403,8 +410,8 @@ export default function BoiAnalysis() {
                         sx={{
                           p: 2,
                           borderRadius: 2,
-                          border: `1px solid ${theme.palette.divider}`,
-                          bgcolor: 'secondary.light'
+                          bgcolor: 'grey.50',
+                          boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)'
                         }}
                       >
                         <Typography variant="caption" color="text.secondary">
@@ -419,9 +426,10 @@ export default function BoiAnalysis() {
                 </Grid>
               </MainCard>
 
-              <Grid container spacing={gridSpacing}>
-                <Grid size={{ xs: 12, md: 6 }}>
+              <Grid container spacing={gridSpacing} alignItems="stretch">
+                <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex' }}>
                   <MainCard
+                    sx={{ width: '100%', height: '100%' }}
                     title="SMS / OTP Interception"
                     secondary={
                       <Chip size="small" label={da.sms_intercepted ? 'DETECTED' : 'Clean'} color={da.sms_intercepted ? 'error' : 'success'} />
@@ -440,8 +448,9 @@ export default function BoiAnalysis() {
                     )}
                   </MainCard>
                 </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
+                <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex' }}>
                   <MainCard
+                    sx={{ width: '100%', height: '100%' }}
                     title="Overlay Attack Detection"
                     secondary={
                       <Chip
@@ -478,7 +487,20 @@ export default function BoiAnalysis() {
                     </TableHead>
                     <TableBody>
                       {da.network_requests.map((r, i) => (
-                        <TableRow key={i}>
+                        <TableRow
+                          key={i}
+                          hover
+                          sx={{
+                            transition: 'background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
+                            '&:hover': {
+                              bgcolor: 'secondary.light',
+                              boxShadow: '0 4px 14px rgba(16, 24, 40, 0.08)',
+                              transform: 'translateY(-2px)',
+                              position: 'relative',
+                              zIndex: 1
+                            }
+                          }}
+                        >
                           <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{r.url || r}</TableCell>
                           <TableCell sx={{ fontFamily: 'monospace', color: 'primary.main' }}>{r.method || '—'}</TableCell>
                           <TableCell>
@@ -511,8 +533,7 @@ export default function BoiAnalysis() {
                         p: 1.25,
                         mb: 1,
                         borderRadius: 1,
-                        bgcolor: alpha(theme.palette.orange.main, 0.08),
-                        border: `1px solid ${theme.palette.divider}`
+                        bgcolor: alpha(theme.palette.orange.main, 0.08)
                       }}
                     >
                       {s}
@@ -542,7 +563,7 @@ export default function BoiAnalysis() {
                           p: 1.75,
                           borderRadius: 2,
                           bgcolor: alpha(theme.palette.error.main, 0.05),
-                          border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`
+                          boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)'
                         }}
                       >
                         <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
@@ -599,8 +620,8 @@ export default function BoiAnalysis() {
                       lineHeight: 1.8,
                       p: 2,
                       borderRadius: 2,
-                      bgcolor: 'secondary.light',
-                      border: `1px solid ${theme.palette.divider}`
+                      bgcolor: 'grey.50',
+                      boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)'
                     }}
                   >
                     {aiData.summary || report?.executive_summary}
@@ -626,8 +647,8 @@ export default function BoiAnalysis() {
                               sx={{
                                 p: 2,
                                 borderRadius: 2,
-                                border: `1px solid ${theme.palette.divider}`,
-                                bgcolor: 'secondary.light',
+                                bgcolor: 'grey.50',
+                                boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)',
                                 height: '100%'
                               }}
                             >
@@ -656,8 +677,8 @@ export default function BoiAnalysis() {
                         p: 1.5,
                         mb: 1,
                         borderRadius: 2,
-                        border: `1px solid ${theme.palette.divider}`,
-                        bgcolor: 'secondary.light'
+                        bgcolor: 'grey.50',
+                        boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)'
                       }}
                     >
                       <Typography color="primary" fontWeight={700}>

@@ -7,14 +7,17 @@ import CardHeader from '@mui/material/CardHeader';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 
-// constant
+// Soft SaaS elevation (Linear / Vercel-ish): rest + hover, no hard border by default
+export const CARD_SHADOW_REST = '0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.06)';
+export const CARD_SHADOW_HOVER = '0 4px 8px rgba(16, 24, 40, 0.04), 0 12px 28px rgba(16, 24, 40, 0.1)';
+
 const headerStyle = {
   '& .MuiCardHeader-action': { mr: 0 }
 };
 
 export default function MainCard({
   border = false,
-  boxShadow,
+  boxShadow = true,
   children,
   content = true,
   contentClass = '',
@@ -26,9 +29,11 @@ export default function MainCard({
   sx = {},
   title,
   ref,
+  hoverLift = false,
   ...others
 }) {
-  const defaultShadow = '0 2px 14px 0 rgb(32 40 45 / 8%)';
+  const restShadow = shadow || CARD_SHADOW_REST;
+  const hoverShadow = CARD_SHADOW_HOVER;
 
   return (
     <Card
@@ -37,22 +42,27 @@ export default function MainCard({
       sx={(theme) => ({
         border: border ? '1px solid' : 'none',
         borderColor: 'divider',
-        ':hover': {
-          boxShadow: boxShadow ? shadow || defaultShadow : 'inherit'
-        },
+        boxShadow: boxShadow ? restShadow : 'none',
+        transition: theme.transitions.create(['box-shadow', 'transform'], {
+          duration: 200,
+          easing: theme.transitions.easing.easeInOut
+        }),
+        ...(boxShadow && {
+          '&:hover': {
+            boxShadow: hoverShadow,
+            ...(hoverLift ? { transform: 'translateY(-3px)' } : {})
+          }
+        }),
         ...(typeof sx === 'function' ? sx(theme) : sx || {})
       })}
     >
-      {/* card header and action */}
       {!darkTitle && title && <CardHeader sx={{ ...headerStyle, ...headerSX }} title={title} action={secondary} />}
       {darkTitle && title && (
         <CardHeader sx={{ ...headerStyle, ...headerSX }} title={<Typography variant="h3">{title}</Typography>} action={secondary} />
       )}
 
-      {/* content & header divider */}
       {title && <Divider />}
 
-      {/* card content */}
       {content && (
         <CardContent sx={contentSX} className={contentClass}>
           {children}
@@ -66,6 +76,7 @@ export default function MainCard({
 MainCard.propTypes = {
   border: PropTypes.bool,
   boxShadow: PropTypes.bool,
+  hoverLift: PropTypes.bool,
   children: PropTypes.oneOfType([PropTypes.string, PropTypes.node]),
   content: PropTypes.bool,
   contentClass: PropTypes.string,

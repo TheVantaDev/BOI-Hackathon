@@ -34,10 +34,10 @@ const defaultColor = {
   orangeMain: '#ffab91',
   orangeDark: '#d84315',
 
-  // warning
+  // warning — deeper yellows for readable Alert text/icons on light backgrounds
   warningLight: '#fff8e1',
-  warningMain: '#ffe57f',
-  warningDark: '#ffc107',
+  warningMain: '#f9a825',
+  warningDark: '#f57c00',
 
   // grey
   grey50: '#f8fafc',

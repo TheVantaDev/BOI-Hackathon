@@ -4,7 +4,9 @@ import { styled } from '@mui/material/styles';
 // project imports
 import { drawerWidth } from 'store/constant';
 
-// ==============================|| MAIN LAYOUT - STYLED (classic padding parity) ||============================== //
+const MINI_WIDTH = 72;
+
+// ==============================|| MAIN LAYOUT - STYLED ||============================== //
 
 const MainContentStyled = styled('main', {
   shouldForwardProp: (prop) => prop !== 'open' && prop !== 'borderRadius'
@@ -20,24 +22,18 @@ const MainContentStyled = styled('main', {
   borderRadius: `${borderRadius}px`,
   borderBottomLeftRadius: 0,
   borderBottomRightRadius: 0,
+  transition: theme.transitions.create(['width', 'margin'], {
+    easing: theme.transitions.easing.easeInOut,
+    duration: 300
+  }),
   ...(!open && {
-    transition: theme.transitions.create('margin', {
-      easing: theme.transitions.easing.sharp,
-      duration: theme.transitions.duration.shorter + 200
-    }),
     [theme.breakpoints.up('md')]: {
       marginLeft: 0,
-      width: `calc(100% - ${drawerWidth}px)`,
-      marginTop: 0
+      width: `calc(100% - ${MINI_WIDTH}px)`
     }
   }),
   ...(open && {
-    transition: theme.transitions.create('margin', {
-      easing: theme.transitions.easing.easeOut,
-      duration: theme.transitions.duration.shorter + 200
-    }),
     marginLeft: 0,
-    marginTop: 0,
     width: `calc(100% - ${drawerWidth}px)`,
     [theme.breakpoints.up('md')]: {
       marginTop: 0

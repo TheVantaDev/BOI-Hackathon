@@ -107,23 +107,38 @@ export default function BoiUpload() {
 
   return (
     <PageEnter>
-      <Grid container spacing={gridSpacing}>
+      <Grid container spacing={gridSpacing} alignItems="stretch">
         <Grid size={12}>
           <StaggerItem delayIndex={0}>
-            <Typography variant="h2" gutterBottom>
-              Upload APK for Analysis
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Submit a suspicious Android application for automated malware investigation
-            </Typography>
+            <Box className="page-header">
+              <Typography variant="h2" className="page-heading">
+                Upload APK for Analysis
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Submit a suspicious Android application for automated malware investigation
+              </Typography>
+            </Box>
           </StaggerItem>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 7 }}>
-          <StaggerItem delayIndex={1}>
-            <MainCard>
+        <Grid size={{ xs: 12, md: 7 }} sx={{ display: 'flex' }}>
+          <StaggerItem delayIndex={1} style={{ display: 'flex', flexDirection: 'column', width: '100%', flex: 1, gap: 24 }}>
+            <MainCard
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%'
+              }}
+              contentSX={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%'
+              }}
+            >
               {phase === 'done' && (
-                <Stack alignItems="center" spacing={2} sx={{ py: 8 }}>
+                <Stack alignItems="center" spacing={2} sx={{ py: 8, flex: 1, justifyContent: 'center' }}>
                   <Avatar
                     variant="rounded"
                     sx={{
@@ -143,7 +158,7 @@ export default function BoiUpload() {
               )}
 
               {phase === 'analyzing' && (
-                <Stack alignItems="center" spacing={2} sx={{ py: 6 }}>
+                <Stack alignItems="center" spacing={2} sx={{ py: 6, flex: 1, justifyContent: 'center' }}>
                   <CircularProgress size={48} />
                   <Typography variant="h3">AI Engine Analyzing…</Typography>
                   <Typography color="text.secondary" align="center" sx={{ maxWidth: 360 }}>
@@ -163,7 +178,7 @@ export default function BoiUpload() {
               )}
 
               {(phase === 'idle' || phase === 'uploading' || phase === 'error') && (
-                <>
+                <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                   <Box
                     onDrop={(e) => {
                       e.preventDefault();
@@ -180,11 +195,17 @@ export default function BoiUpload() {
                       border: '2px dashed',
                       borderColor: dragging ? 'primary.main' : 'divider',
                       borderRadius: 3,
-                      p: { xs: 4, md: 7 },
+                      p: { xs: 4, md: 5 },
                       textAlign: 'center',
                       cursor: phase === 'idle' ? 'pointer' : 'default',
                       bgcolor: dragging ? 'primary.light' : alpha(theme.palette.primary.main, 0.02),
-                      transition: 'all 0.2s ease'
+                      transition: 'all 0.2s ease',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: { xs: 220, md: 280 }
                     }}
                   >
                     <input ref={inputRef} type="file" accept=".apk" hidden onChange={(e) => handleFile(e.target.files[0])} />
@@ -238,51 +259,53 @@ export default function BoiUpload() {
                       <Chip key={f} label={f} size="small" color="primary" />
                     ))}
                   </Stack>
-                </>
+                </Box>
               )}
             </MainCard>
+
+            <Alert severity="warning" icon={<IconShieldCheck size={18} />} sx={{ flexShrink: 0 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Secure Analysis
+              </Typography>
+              All APKs are executed in an isolated sandbox environment. No data leaves the on-premise deployment.
+            </Alert>
           </StaggerItem>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 5 }}>
-          <StaggerItem delayIndex={2}>
-            <Stack spacing={gridSpacing}>
-              <MainCard title="Analysis Pipeline">
-                {PIPELINE.map((item, i) => (
-                  <Box key={item.step}>
-                    <Stack direction="row" spacing={1.5} sx={{ py: 1.5 }} alignItems="flex-start">
-                      <Avatar
-                        variant="rounded"
-                        sx={{
-                          ...theme.typography.mediumAvatar,
-                          borderRadius: '8px',
-                          bgcolor: 'secondary.light',
-                          color: 'secondary.dark',
-                          fontSize: '0.75rem',
-                          fontWeight: 700
-                        }}
-                      >
-                        {item.step}
-                      </Avatar>
-                      <Box>
-                        <Typography variant="subtitle1">{item.title}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {item.desc}
-                        </Typography>
-                      </Box>
-                    </Stack>
-                    {i < PIPELINE.length - 1 && <Divider />}
-                  </Box>
-                ))}
-              </MainCard>
-
-              <Alert severity="warning" icon={<IconShieldCheck size={18} />}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Secure Analysis
-                </Typography>
-                All APKs are executed in an isolated sandbox environment. No data leaves the on-premise deployment.
-              </Alert>
-            </Stack>
+        <Grid size={{ xs: 12, md: 5 }} sx={{ display: 'flex' }}>
+          <StaggerItem delayIndex={2} style={{ width: '100%', display: 'flex', flex: 1 }}>
+            <MainCard
+              title="Analysis Pipeline"
+              sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
+              contentSX={{ flex: 1 }}
+            >
+              {PIPELINE.map((item, i) => (
+                <Box key={item.step}>
+                  <Stack direction="row" spacing={1.5} sx={{ py: 1.5 }} alignItems="flex-start">
+                    <Avatar
+                      variant="rounded"
+                      sx={{
+                        ...theme.typography.mediumAvatar,
+                        borderRadius: '8px',
+                        bgcolor: 'secondary.light',
+                        color: 'secondary.dark',
+                        fontSize: '0.75rem',
+                        fontWeight: 700
+                      }}
+                    >
+                      {item.step}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="subtitle1">{item.title}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {item.desc}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  {i < PIPELINE.length - 1 && <Divider />}
+                </Box>
+              ))}
+            </MainCard>
           </StaggerItem>
         </Grid>
       </Grid>

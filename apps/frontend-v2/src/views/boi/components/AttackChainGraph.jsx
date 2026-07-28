@@ -120,7 +120,8 @@ export default function AttackChainGraph({ elements, height = 300 }) {
         borderRadius: 2,
         border: '1px solid',
         borderColor: 'divider',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)'
       }}
     />
   );

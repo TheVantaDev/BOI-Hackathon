@@ -28,12 +28,15 @@ export default function StatTile({ label, value, sub, tone = 'primary', variant 
   // ponytail: error/orange lack 200/800 — fall back to light/dark
   const circle = palette[800] || palette.dark;
   const labelColor = filled ? palette[200] || palette.light : theme.palette.grey[500];
-  const avatarBg = filled ? palette[800] || palette.main : palette.light;
+  // filled: icon only (no nested box); light: soft tone well
+  const avatarBg = filled ? 'transparent' : palette.light;
   const avatarFg = filled ? '#fff' : palette.dark;
 
   return (
     <MainCard
       border={false}
+      boxShadow
+      hoverLift
       content={false}
       sx={{
         ...(filled
@@ -114,15 +117,16 @@ export default function StatTile({ label, value, sub, tone = 'primary', variant 
           <Avatar
             variant="rounded"
             sx={{
-              ...theme.typography.largeAvatar,
+              width: 52,
+              height: 52,
               borderRadius: 2,
               bgcolor: avatarBg,
               color: avatarFg,
-              mt: 0.5,
+              mt: 0.25,
               zIndex: 1
             }}
           >
-            <Icon size={22} />
+            <Icon size={28} />
           </Avatar>
         </Stack>
       </Box>
