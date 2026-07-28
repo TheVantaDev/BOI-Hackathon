@@ -94,20 +94,14 @@ def _build_apk_signals(data: Dict[str, Any]) -> Dict[str, set]:
         perm_short.add(short.upper())           # e.g. "SEND_SMS"
         perm_full.add(full.lower())             # e.g. "android.permission.send_sms"
 
-    # ── 2. API methods / classes — ALL of them from bytecode ─────────────────
-    # The static analyzer returns both a short suspicious_apis list (18 known
-    # bad names) AND the full all_api_classes list (every class/method ref from
-    # bytecode).  The DREBIN-215 binary model needs the FULL list so that all
-    # 215 independently-weighted features can match.  (The old 12-feature count
-    # model would have been overwhelmed by benign API names inflating counts,
-    # but the new model uses binary 0/1 per feature — no dilution possible.)
+    # ── 2. API methods / classes ───────────────────────────────────────────
+    # Uses the 18 hardcoded suspicious_apis from the static analyzer.
+    # NOTE: all_api_classes (89K full bytecode refs) is intentionally NOT used.
+    # Its naming format is incompatible with DREBIN-215 feature names and
+    # causes the model to malfunction regardless of matching strategy tried.
     api_strings: set = set()
     for api in static.get("suspicious_apis", []):
         api_strings.add(str(api))
-    # Full class/method references extracted by Androguard — needed for DREBIN
-    # features like transact, Ljava.lang.Class.getCanonicalName, Ljavax.crypto.Cipher
-    for cls in static.get("all_api_classes", []):
-        api_strings.add(str(cls))
 
     # ── 3. Intent actions ────────────────────────────────────────────────────
     intents: set = set()
@@ -184,10 +178,7 @@ def _feature_hit(fname: str, signals: Dict[str, set]) -> bool:
         short = fname.split(".")[-1].upper()
         return short in ps or fname.lower() in pa
 
-    # Match against api_strings by:
-    #   - exact match
-    #   - fname is a suffix of any api string  (e.g. "DexClassLoader" in "android.DexClassLoader")
-    #   - api string contains fname as substring
+    # Match against api_strings (small set — substring matching is safe)
     fname_lower = fname.lower().replace("ljava", "java").replace("landroid", "android")
     for api in apis:
         api_lower = api.lower()
