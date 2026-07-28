@@ -95,16 +95,19 @@ def _build_apk_signals(data: Dict[str, Any]) -> Dict[str, set]:
         perm_full.add(full.lower())             # e.g. "android.permission.send_sms"
 
     # ── 2. API methods / classes — ALL of them from bytecode ─────────────────
-    # The static analyzer currently only returns 18 hardcoded names.
-    # We also accept an extended list from a richer extraction field.
+    # The static analyzer returns both a short suspicious_apis list (18 known
+    # bad names) AND the full all_api_classes list (every class/method ref from
+    # bytecode).  The DREBIN-215 binary model needs the FULL list so that all
+    # 215 independently-weighted features can match.  (The old 12-feature count
+    # model would have been overwhelmed by benign API names inflating counts,
+    # but the new model uses binary 0/1 per feature — no dilution possible.)
     api_strings: set = set()
     for api in static.get("suspicious_apis", []):
         api_strings.add(str(api))
-    # Full class references extracted by Androguard (if analyzer was updated)
-    # We DO NOT extract all_api_classes because hundreds of benign API calls
-    # overwhelm the XGBoost model and dilute malicious signals.
-    # for cls in static.get("all_api_classes", []):
-    #     api_strings.add(str(cls))
+    # Full class/method references extracted by Androguard — needed for DREBIN
+    # features like transact, Ljava.lang.Class.getCanonicalName, Ljavax.crypto.Cipher
+    for cls in static.get("all_api_classes", []):
+        api_strings.add(str(cls))
 
     # ── 3. Intent actions ────────────────────────────────────────────────────
     intents: set = set()
@@ -113,6 +116,12 @@ def _build_apk_signals(data: Dict[str, Any]) -> Dict[str, set]:
         intents.add(str(svc).lower())
     for intent_str in static.get("intent_actions", []):
         intents.add(str(intent_str).lower())
+    # Also pull intent-filter actions directly from the manifest receivers/services
+    # so DREBIN intent features like android.intent.action.BOOT_COMPLETED match
+    for receiver in manifest.get("receivers", []):
+        intents.add(str(receiver).lower())
+    for service in manifest.get("services", []):
+        intents.add(str(service).lower())
 
     # ── 4. Shell commands / paths in code ────────────────────────────────────
     shell_strings: set = set()

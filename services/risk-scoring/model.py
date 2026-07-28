@@ -2,7 +2,7 @@
 model.py — Risk scoring using DREBIN-215 raw feature XGBoost model.
 
 Model trained with binary:logistic outputs a single p(malicious) float.
-Score formula:  risk_score = p_malicious × 90.0   (matches Colab Cell 8)
+Score formula:  risk_score = p_malicious × 100.0
 """
 import logging
 import os
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.json"))
 
 CLASS_NAMES  = ["Benign", "Malicious"]
-SEVERITY_MAX = 90.0   # p_malicious × 90.0
+SEVERITY_MAX = 100.0  # p_malicious × 100.0  (full probability → full score range)
 
 _model = None
 
@@ -111,21 +111,35 @@ def predict_score(features: np.ndarray, _raw_data: dict = None) -> float:
     try:
         p_mal = _get_p_malicious(model, _raw_data or {})
 
-        # score = p(malicious) × 90  — exact formula from Colab Cell 8
+        # score = p(malicious) × 100
         risk_score = round(min(max(p_mal * SEVERITY_MAX, 0.0), 100.0), 1)
 
-        # Safety cap: if ZERO confirmed runtime/IOC signals, cap at 35.
-        # Real banking trojans always trip at least one: SMS intercept,
-        # accessibility abuse, C2 connection, YARA match, or known-bad IOC.
-        # A calculator with SYSTEM_ALERT_WINDOW has none of these.
+        # Confidence-aware safety cap when no confirmed runtime/IOC signals.
+        # High-confidence ML predictions are trusted even without dynamic data;
+        # low-confidence ones are capped to prevent false positives from
+        # benign apps that happen to have suspicious-looking permissions.
         if _raw_data is not None and not _confirmed_signal(_raw_data):
-            capped = min(risk_score, 35.0)
-            if capped < risk_score:
-                logger.info(
-                    "Score capped at 35 (no confirmed signals): %.1f → %.1f",
-                    risk_score, capped,
-                )
-            risk_score = capped
+            if p_mal >= 0.8:
+                # Model is highly confident — trust the ML prediction
+                pass
+            elif p_mal >= 0.5:
+                # Moderate confidence — allow "Suspicious" but not "Highly Malicious"
+                cap = 55.0
+                if risk_score > cap:
+                    logger.info(
+                        "Score capped at %.0f (moderate confidence, no confirmed signals): %.1f → %.1f",
+                        cap, risk_score, cap,
+                    )
+                    risk_score = cap
+            else:
+                # Low confidence without signals — cap at Low Risk
+                cap = 35.0
+                if risk_score > cap:
+                    logger.info(
+                        "Score capped at %.0f (low confidence, no confirmed signals): %.1f → %.1f",
+                        cap, risk_score, cap,
+                    )
+                    risk_score = cap
 
         return risk_score
 
