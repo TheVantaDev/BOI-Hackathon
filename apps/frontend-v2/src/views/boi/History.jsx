@@ -60,8 +60,8 @@ export default function BoiHistory() {
     <PageEnter>
       <Stack spacing={gridSpacing}>
         <StaggerItem delayIndex={0}>
-          <Box>
-            <Typography variant="h2" gutterBottom>
+          <Box className="page-header">
+            <Typography variant="h2" className="page-heading">
               Analysis History
             </Typography>
             <Typography variant="body2" color="text.secondary">
@@ -71,7 +71,7 @@ export default function BoiHistory() {
         </StaggerItem>
 
         <StaggerItem delayIndex={1}>
-          <MainCard contentSX={{ py: 2 }}>
+          <MainCard>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
               <TextField
                 fullWidth
@@ -150,7 +150,17 @@ export default function BoiHistory() {
                       hover
                       sx={{
                         cursor: item.status === 'completed' ? 'pointer' : 'default',
-                        '&:hover': item.status === 'completed' ? { bgcolor: 'secondary.light' } : undefined
+                        transition: 'background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
+                        '&:hover':
+                          item.status === 'completed'
+                            ? {
+                                bgcolor: 'secondary.light',
+                                boxShadow: '0 4px 14px rgba(16, 24, 40, 0.08)',
+                                transform: 'translateY(-2px)',
+                                position: 'relative',
+                                zIndex: 1
+                              }
+                            : undefined
                       }}
                       onClick={() => item.status === 'completed' && navigate(`/analysis/${item.apk_id}`)}
                     >

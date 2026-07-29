@@ -82,17 +82,19 @@ export default function BoiDashboard() {
       <Grid container spacing={gridSpacing}>
         <Grid size={12}>
           <StaggerItem delayIndex={0}>
-            <Typography variant="h2" gutterBottom>
-              Threat Intelligence Dashboard
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Real-time APK analysis and malware investigation overview
-            </Typography>
-            {error && (
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                Could not reach backend. Connect the backend to see live data.
-              </Alert>
-            )}
+            <Box className="page-header">
+              <Typography variant="h2" className="page-heading">
+                Threat Intelligence Dashboard
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Real-time APK analysis and malware investigation overview
+              </Typography>
+              {error && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  Could not reach backend. Connect the backend to see live data.
+                </Alert>
+              )}
+            </Box>
           </StaggerItem>
         </Grid>
 
@@ -244,7 +246,14 @@ export default function BoiDashboard() {
                         hover
                         sx={{
                           cursor: 'pointer',
-                          '&:hover': { bgcolor: 'secondary.light' }
+                          transition: 'background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
+                          '&:hover': {
+                            bgcolor: 'secondary.light',
+                            boxShadow: '0 4px 14px rgba(16, 24, 40, 0.08)',
+                            transform: 'translateY(-2px)',
+                            position: 'relative',
+                            zIndex: 1
+                          }
                         }}
                         onClick={() => u.status === 'completed' && navigate(`/analysis/${u.apk_id}`)}
                       >

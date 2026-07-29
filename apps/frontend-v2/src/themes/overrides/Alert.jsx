@@ -22,8 +22,15 @@ export default function Alert(theme) {
 
     return {
       color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main,
-      backgroundColor: withAlpha(paletteColor.main, 0.075),
-      '& .MuiAlert-icon': { color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main }
+      // warning: soft amber wash from light token (not washed-out main)
+      backgroundColor:
+        ownerState.severity === 'warning'
+          ? withAlpha(paletteColor.light, 0.85)
+          : withAlpha(paletteColor.main, 0.075),
+      '& .MuiAlert-icon': { color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main },
+      '& .MuiAlert-message': {
+        color: isWarningOrSuccess ? paletteColor.dark : undefined
+      }
     };
   };
 
@@ -34,7 +41,10 @@ export default function Alert(theme) {
     return {
       color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main,
       borderColor: paletteColor.dark,
-      '& .MuiAlert-icon': { color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main }
+      '& .MuiAlert-icon': { color: isWarningOrSuccess ? paletteColor.dark : paletteColor.main },
+      '& .MuiAlert-message': {
+        color: isWarningOrSuccess ? paletteColor.dark : undefined
+      }
     };
   };
 

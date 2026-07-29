@@ -6,7 +6,6 @@ import { Link, matchPath, useLocation } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Avatar from '@mui/material/Avatar';
-import ButtonBase from '@mui/material/ButtonBase';
 import Chip from '@mui/material/Chip';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
@@ -45,12 +44,12 @@ export default function NavItem({ item, level, isParents = false, setSelectedID 
   useEffect(() => {
     compareSize();
     window.addEventListener('resize', compareSize);
-    window.removeEventListener('resize', compareSize);
+    return () => window.removeEventListener('resize', compareSize);
   }, []);
 
   const Icon = item?.icon;
   const itemIcon = item?.icon ? (
-    <Icon stroke={1.5} size={drawerOpen ? '20px' : '24px'} style={{ ...(isParents && { fontSize: 20, stroke: '1.5' }) }} />
+    <Icon stroke={1.5} size={drawerOpen ? '20px' : '22px'} style={{ ...(isParents && { fontSize: 20, stroke: '1.5' }) }} />
   ) : (
     <FiberManualRecordIcon sx={{ width: isSelected ? 8 : 6, height: isSelected ? 8 : 6 }} fontSize={level > 0 ? 'inherit' : 'medium'} />
   );
@@ -68,112 +67,176 @@ export default function NavItem({ item, level, isParents = false, setSelectedID 
     }
   };
 
-  return (
-    <>
-      <ListItemButton
-        component={Link}
-        to={item.url}
-        target={itemTarget}
-        disabled={item.disabled}
-        disableRipple={!drawerOpen}
-        sx={{
-          zIndex: 1201,
-          borderRadius: `${borderRadius}px`,
-          mb: 0.5,
-          ...(drawerOpen && level !== 1 && { ml: `${level * 18}px` }),
-          ...(!drawerOpen && { pl: 1.25 }),
-          ...((!drawerOpen || level !== 1) && {
-            py: level === 1 ? 0 : 1,
-            '&:hover': { bgcolor: 'transparent' },
-            '&.Mui-selected': {
-              '&:hover': { bgcolor: 'transparent' },
-              bgcolor: 'transparent'
+  const button = (
+    <ListItemButton
+      component={Link}
+      to={item.url}
+      target={itemTarget}
+      disabled={item.disabled}
+      disableRipple={!drawerOpen}
+      sx={{
+        zIndex: 1201,
+        borderRadius: `${borderRadius}px`,
+        mb: 0.5,
+        position: 'relative',
+        overflow: 'hidden',
+        transition: theme.transitions.create(['padding', 'background-color', 'width', 'box-shadow'], {
+          easing: theme.transitions.easing.easeInOut,
+          duration: 250
+        }),
+        ...(drawerOpen && level !== 1 && { ml: `${level * 18}px` }),
+        ...(drawerOpen
+          ? {
+              // selected: lavender wash + purple left accent (Berry secondary)
+              '&.Mui-selected': {
+                bgcolor: 'secondary.light',
+                color: 'secondary.dark',
+                boxShadow: `inset 3px 0 0 ${theme.palette.secondary.main}`,
+                '&:hover': {
+                  bgcolor: 'secondary.light',
+                  boxShadow: `inset 3px 0 0 ${theme.palette.secondary.dark}`
+                },
+                '& .MuiListItemIcon-root': { color: 'secondary.dark' }
+              }
             }
-          })
+          : level === 1
+            ? {
+                justifyContent: 'center',
+                alignItems: 'center',
+                px: 0,
+                py: 0.75,
+                minHeight: 48,
+                width: '100%',
+                '&:hover': { bgcolor: 'transparent' },
+                '&.Mui-selected': {
+                  bgcolor: 'transparent',
+                  '&:hover': { bgcolor: 'transparent' }
+                }
+              }
+            : {
+                py: 1,
+                '&:hover': { bgcolor: 'transparent' },
+                '&.Mui-selected': {
+                  bgcolor: 'transparent',
+                  '&:hover': { bgcolor: 'transparent' }
+                }
+              })
+      }}
+      selected={isSelected}
+      onClick={() => itemHandler()}
+    >
+      <ListItemIcon
+        sx={{
+          minWidth: drawerOpen ? (level === 1 ? 36 : 18) : 0,
+          color: isSelected ? 'secondary.main' : 'text.primary',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: theme.transitions.create(['min-width', 'width', 'height', 'margin'], {
+            easing: theme.transitions.easing.easeInOut,
+            duration: 250
+          }),
+          ...(!drawerOpen &&
+            level === 1 && {
+              width: 46,
+              height: 46,
+              margin: 0,
+              borderRadius: `${borderRadius}px`,
+              '&:hover': { bgcolor: 'secondary.light' },
+              ...(isSelected && {
+                bgcolor: 'secondary.light',
+                color: 'secondary.dark',
+                boxShadow: `0 0 0 1px ${theme.palette.secondary.main}33, 0 4px 12px ${theme.palette.secondary.main}28`,
+                '&:hover': { bgcolor: 'secondary.light' }
+              })
+            })
         }}
-        selected={isSelected}
-        onClick={() => itemHandler()}
       >
-        <ButtonBase aria-label="theme-icon" sx={{ borderRadius: `${borderRadius}px` }} disableRipple={drawerOpen}>
-          <ListItemIcon
+        {itemIcon}
+      </ListItemIcon>
+
+      <ListItemText
+        primary={
+          <Typography
+            ref={ref}
+            noWrap
+            variant={isSelected ? 'h5' : 'body1'}
             sx={{
-              minWidth: level === 1 ? 36 : 18,
-              color: isSelected ? 'secondary.main' : 'text.primary',
-              ...(!drawerOpen &&
-                level === 1 && {
-                  borderRadius: `${borderRadius}px`,
-                  width: 46,
-                  height: 46,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  '&:hover': { bgcolor: 'secondary.light' },
-                  ...(isSelected && {
-                    bgcolor: 'secondary.light',
-                    '&:hover': { bgcolor: 'secondary.light' }
-                  })
-                })
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              color: 'inherit'
             }}
           >
-            {itemIcon}
-          </ListItemIcon>
-        </ButtonBase>
+            {item.title}
+          </Typography>
+        }
+        secondary={
+          item.caption &&
+          drawerOpen && (
+            <Typography
+              variant="caption"
+              gutterBottom
+              sx={{
+                display: 'block',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                color: 'text.secondary',
+                textTransform: 'capitalize',
+                lineHeight: 1.66
+              }}
+            >
+              {item.caption}
+            </Typography>
+          )
+        }
+        sx={{
+          opacity: drawerOpen ? 1 : 0,
+          maxWidth: drawerOpen ? 160 : 0,
+          m: 0,
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
+          transition: theme.transitions.create(['opacity', 'max-width'], {
+            easing: theme.transitions.easing.easeInOut,
+            duration: 220
+          }),
+          ...(!drawerOpen && { display: level === 1 ? 'none' : 'block' })
+        }}
+      />
 
-        {(drawerOpen || (!drawerOpen && level !== 1)) && (
-          <Tooltip title={item.title} disableHoverListener={!hoverStatus}>
-            <ListItemText
-              primary={
-                <Typography
-                  ref={ref}
-                  noWrap
-                  variant={isSelected ? 'h5' : 'body1'}
-                  sx={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    width: 102,
-                    color: 'inherit'
-                  }}
-                >
-                  {item.title}
-                </Typography>
-              }
-              secondary={
-                item.caption && (
-                  <Typography
-                    variant="caption"
-                    gutterBottom
-                    sx={{
-                      display: 'block',
-                      fontSize: '0.6875rem',
-                      fontWeight: 500,
-                      color: 'text.secondary',
-                      textTransform: 'capitalize',
-                      lineHeight: 1.66
-                    }}
-                  >
-                    {item.caption}
-                  </Typography>
-                )
-              }
-            />
-          </Tooltip>
-        )}
-
-        <Activity mode={drawerOpen && item.chip ? 'visible' : 'hidden'}>
-          <Chip
-            color={item.chip?.color}
-            variant={item.chip?.variant}
-            size={item.chip?.size}
-            label={item.chip?.label}
-            avatar={
-              <Activity mode={item.chip?.avatar ? 'visible' : 'hidden'}>
-                <Avatar>{item.chip?.avatar}</Avatar>
-              </Activity>
-            }
-          />
-        </Activity>
-      </ListItemButton>
-    </>
+      <Activity mode={drawerOpen && item.chip ? 'visible' : 'hidden'}>
+        <Chip
+          color={item.chip?.color}
+          variant={item.chip?.variant}
+          size={item.chip?.size}
+          label={item.chip?.label}
+          avatar={
+            <Activity mode={item.chip?.avatar ? 'visible' : 'hidden'}>
+              <Avatar>{item.chip?.avatar}</Avatar>
+            </Activity>
+          }
+        />
+      </Activity>
+    </ListItemButton>
   );
+
+  // Tooltip on collapsed icons so labels remain discoverable
+  if (!drawerOpen && level === 1) {
+    return (
+      <Tooltip title={item.title} placement="right" arrow>
+        {button}
+      </Tooltip>
+    );
+  }
+
+  if (drawerOpen && hoverStatus) {
+    return (
+      <Tooltip title={item.title} disableHoverListener={!hoverStatus}>
+        {button}
+      </Tooltip>
+    );
+  }
+
+  return button;
 }
 
 NavItem.propTypes = { item: PropTypes.any, level: PropTypes.number, isParents: PropTypes.bool, setSelectedID: PropTypes.func };
