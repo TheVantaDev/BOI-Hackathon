@@ -25,6 +25,7 @@ import {
   IconArrowLeft,
   IconBug,
   IconCode,
+  IconListCheck,
   IconLock,
   IconNetwork,
   IconShield
@@ -33,14 +34,28 @@ import {
 import MainCard from 'ui-component/cards/MainCard';
 import SkeletonPopularCard from 'ui-component/cards/Skeleton/PopularCard';
 import { gridSpacing } from 'store/constant';
-import { downloadPdf, getAnalysis, getAnalysisStatus, getReport } from 'api/client';
+import {
+  downloadActionsPdf,
+  downloadPdf,
+  getActions,
+  getAnalysis,
+  getAnalysisStatus,
+  getReport
+} from 'api/client';
 import RiskGauge from './components/RiskGauge';
 import AttackChainGraph from './components/AttackChainGraph';
 import DecompiledView from './components/DecompiledView';
 import { PageEnter, StaggerItem, TabFade } from './components/Motion';
 import { classificationToChipColor } from './utils/status';
 
-const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Decompiled Source'];
+const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Actions', 'Decompiled Source'];
+
+const PRIORITY_COLOR = {
+  P1: 'error',
+  P2: 'warning',
+  P3: 'default',
+  P4: 'default'
+};
 
 function FlagRow({ label, value, theme }) {
   return (
@@ -78,6 +93,7 @@ export default function BoiAnalysis() {
   const [tab, setTab] = useState(0);
   const [analysis, setAnalysis] = useState(null);
   const [report, setReport] = useState(null);
+  const [actionsData, setActionsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processingStatus, setProcessingStatus] = useState(null);
@@ -89,9 +105,14 @@ export default function BoiAnalysis() {
     const loadData = async () => {
       setLoading(true);
       setError(null);
-      const [analysisResult, reportResult] = await Promise.allSettled([getAnalysis(id), getReport(id)]);
+      const [analysisResult, reportResult, actionsResult] = await Promise.allSettled([
+        getAnalysis(id),
+        getReport(id),
+        getActions(id)
+      ]);
       const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value.data : null;
       const reportData = reportResult.status === 'fulfilled' ? reportResult.value.data : null;
+      const actionsPayload = actionsResult.status === 'fulfilled' ? actionsResult.value.data : null;
 
       if (!analysisData) {
         setError('Failed to load analysis. Make sure the backend is running and this analysis exists.');
@@ -101,6 +122,7 @@ export default function BoiAnalysis() {
 
       setAnalysis(analysisData);
       setReport(reportData);
+      setActionsData(actionsPayload);
       setLoading(false);
 
       const status = analysisData.status;
@@ -113,9 +135,14 @@ export default function BoiAnalysis() {
             setProcessingStatus(newStatus);
             if (newStatus === 'completed' || newStatus === 'failed') {
               clearInterval(pollInterval);
-              const [a2, r2] = await Promise.allSettled([getAnalysis(id), getReport(id)]);
+              const [a2, r2, act2] = await Promise.allSettled([
+                getAnalysis(id),
+                getReport(id),
+                getActions(id)
+              ]);
               if (a2.status === 'fulfilled') setAnalysis(a2.value.data);
               if (r2.status === 'fulfilled') setReport(r2.value.data);
+              if (act2.status === 'fulfilled') setActionsData(act2.value.data);
               setProcessingStatus(null);
             }
           } catch {
@@ -141,7 +168,21 @@ export default function BoiAnalysis() {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert('PDF download failed');
+      alert('Report PDF download failed');
+    }
+  };
+
+  const handleDownloadActions = async () => {
+    try {
+      const res = await downloadActionsPdf(id);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `actions-${id}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Actions PDF download failed');
     }
   };
 
@@ -150,6 +191,8 @@ export default function BoiAnalysis() {
   const sa = analysis?.static_analysis || {};
   const da = analysis?.dynamic_analysis || {};
   const ti = analysis?.threat_intel || {};
+  const actionItems = actionsData?.actions || [];
+  const canDownloadActions = actionItems.length > 0;
 
   let aiData = {};
   try {
@@ -205,9 +248,12 @@ export default function BoiAnalysis() {
               SHA256: {analysis.sha256}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <Button variant="outlined" onClick={handleDownloadPdf}>
-              Download PDF
+              Download Report
+            </Button>
+            <Button variant="outlined" onClick={handleDownloadActions} disabled={!canDownloadActions}>
+              Download Actions
             </Button>
             <Chip
               label={risk.classification || analysis.status}
@@ -704,7 +750,73 @@ export default function BoiAnalysis() {
             </Stack>
           )}
 
-          {tab === 5 && <DecompiledView apkId={id} />}
+          {tab === 5 && (
+            <Stack spacing={gridSpacing}>
+              <MainCard
+                title={
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <IconListCheck size={16} color={theme.palette.primary.main} />
+                    <span>Recommended Bank Actions</span>
+                  </Stack>
+                }
+                secondary={
+                  <Typography variant="caption" color="text.secondary">
+                    Status: {actionsData?.status || 'missing'}
+                    {actionsData?.generated_at ? ` · ${new Date(actionsData.generated_at).toLocaleString()}` : ''}
+                  </Typography>
+                }
+              >
+                <Typography variant="body2" color="text.secondary">
+                  Operational playbook for SOC / Fraud / IT — separate from the investigation report.
+                </Typography>
+              </MainCard>
+
+              {actionItems.length > 0 ? (
+                actionItems.map((a, i) => {
+                  const p = (a.priority || 'P3').toUpperCase();
+                  return (
+                    <MainCard
+                      key={i}
+                      sx={{
+                        borderLeft: 3,
+                        borderColor: p === 'P1' ? 'error.main' : p === 'P2' ? 'warning.main' : 'divider'
+                      }}
+                    >
+                      <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
+                        <Typography variant="subtitle1" fontWeight={700}>
+                          {i + 1}. {a.title}
+                        </Typography>
+                        <Chip size="small" label={p} color={PRIORITY_COLOR[p] || 'default'} />
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                        Owner: <strong>{a.owner || '—'}</strong> · SLA: <strong>{a.sla || '—'}</strong>
+                      </Typography>
+                      {Array.isArray(a.steps) && a.steps.length > 0 && (
+                        <Box component="ol" sx={{ m: 0, pl: 2.5, mb: a.rationale ? 1.5 : 0 }}>
+                          {a.steps.map((step, si) => (
+                            <Typography key={si} component="li" variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                              {step}
+                            </Typography>
+                          ))}
+                        </Box>
+                      )}
+                      {a.rationale && (
+                        <Typography variant="body2" color="text.secondary" sx={{ pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
+                          <strong>Why:</strong> {a.rationale}
+                        </Typography>
+                      )}
+                    </MainCard>
+                  );
+                })
+              ) : (
+                <Alert severity="info">
+                  No recommended actions yet. If analysis is complete, regenerate via the API or re-upload the APK.
+                </Alert>
+              )}
+            </Stack>
+          )}
+
+          {tab === 6 && <DecompiledView apkId={id} />}
           </TabFade>
         </Box>
       </MainCard>

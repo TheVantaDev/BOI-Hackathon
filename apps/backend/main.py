@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import upload, analysis, reports, dashboard
+from routers import upload, analysis, reports, dashboard, actions
 from services.db import init_db
 
 app = FastAPI(
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(actions.router, prefix="/api/actions", tags=["Actions"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 
 

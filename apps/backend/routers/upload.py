@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from sqlalchemy.orm import Session
 
 from models.apk import APKUpload, AnalysisResult, RiskReport
+from services.action_client import fetch_recommended_actions
 from services.db import get_db
 from services.pipeline import run_pipeline
 from services.storage import upload_apk
@@ -58,12 +59,38 @@ def _process_apk(apk_id: str, minio_path: str, sha256: str):
         score   = _sanitize(result.get("risk_score", {}))
 
         import json as _json
+
+        package_name = (
+            (static.get("package_name") if isinstance(static, dict) else None)
+            or (static.get("manifest", {}) or {}).get("package_name")
+            or (static.get("manifest", {}) or {}).get("package")
+        )
+        record = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
+
+        # Bank actions: separate from report; failure must not fail the APK
+        recommended = fetch_recommended_actions(
+            {
+                "apk_id": apk_id,
+                "filename": record.filename if record else "",
+                "package_name": package_name or "",
+                "severity": score.get("severity", "Unknown"),
+                "classification": score.get("classification", "Unknown"),
+                "fraud_intent": fraud.get("intent", "Unknown"),
+                "risk_score": score.get("score"),
+                "executive_summary": ai.get("summary", ""),
+                "static": static if isinstance(static, dict) else {},
+                "dynamic": dynamic if isinstance(dynamic, dict) else {},
+                "threat_intel": ti if isinstance(ti, dict) else {},
+            }
+        )
+
         analysis = AnalysisResult(
             apk_id=apk_id,
             static_analysis=static,
             dynamic_analysis=dynamic,
             threat_intel=ti,
             ai_summary=_json.dumps(ai) if ai else "",
+            recommended_actions=_sanitize(recommended),
         )
         db.add(analysis)
 
@@ -81,12 +108,16 @@ def _process_apk(apk_id: str, minio_path: str, sha256: str):
         )
         db.add(report)
 
-        record = db.query(APKUpload).filter(APKUpload.id == apk_id).first()
         if record:
             record.status = "completed"
 
         db.commit()
-        logger.info("Pipeline completed for apk_id=%s", apk_id)
+        logger.info(
+            "Pipeline completed for apk_id=%s actions_status=%s",
+            apk_id,
+            (recommended or {}).get("status"),
+        )
+
 
     except Exception as exc:
         logger.exception("Pipeline failed for apk_id=%s: %s", apk_id, exc)

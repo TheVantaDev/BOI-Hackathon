@@ -34,6 +34,7 @@ class AnalysisResult(Base):
     dynamic_analysis = Column(JSONB)
     threat_intel = Column(JSONB)
     ai_summary = Column(Text)
+    recommended_actions = Column(JSONB)  # bank playbook; not part of report PDF
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     apk = relationship("APKUpload", back_populates="analysis")

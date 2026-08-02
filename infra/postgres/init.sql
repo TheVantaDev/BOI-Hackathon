@@ -11,13 +11,14 @@ CREATE TABLE IF NOT EXISTS apk_uploads (
 );
 
 CREATE TABLE IF NOT EXISTS analysis_results (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    apk_id          UUID NOT NULL REFERENCES apk_uploads(id) ON DELETE CASCADE,
-    static_analysis JSONB,
-    dynamic_analysis JSONB,
-    threat_intel    JSONB,
-    ai_summary      TEXT,
-    created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    apk_id               UUID NOT NULL REFERENCES apk_uploads(id) ON DELETE CASCADE,
+    static_analysis      JSONB,
+    dynamic_analysis     JSONB,
+    threat_intel         JSONB,
+    ai_summary           TEXT,
+    recommended_actions  JSONB,
+    created_at           TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS threat_indicators (

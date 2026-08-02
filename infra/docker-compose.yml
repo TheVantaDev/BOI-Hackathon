@@ -180,11 +180,12 @@ services:
     environment:
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
-      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_URL: http://ollama:11434
     volumes:
       - ../services/rag-engine/knowledge_base:/app/knowledge_base
     depends_on:
       - chromadb
+      - ollama
 
   ai-investigation-engine:
     build:
@@ -193,10 +194,13 @@ services:
     ports:
       - "8014:8014"
     environment:
-      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2:3b
+      OLLAMA_TIMEOUT: "300"
       RAG_ENGINE_URL: http://rag-engine:8013
     depends_on:
       - rag-engine
+      - ollama
 
   fraud-intent-engine:
     build:
@@ -205,9 +209,11 @@ services:
     ports:
       - "8015:8015"
     environment:
-      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2:3b
     depends_on:
       - backend
+      - ollama
 
   risk-scoring:
     build:
