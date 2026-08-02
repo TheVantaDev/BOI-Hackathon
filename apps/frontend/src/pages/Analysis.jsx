@@ -3,13 +3,23 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Shield, AlertTriangle, Wifi, Lock, Code2, FileWarning,
   ChevronLeft, ExternalLink, Info, Bug, Activity,
-  Folder, FolderOpen, FileCode, ChevronRight, ChevronDown, Loader2
+  Folder, FolderOpen, FileCode, ChevronRight, ChevronDown, Loader2,
+  ListChecks,
 } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import RiskScoreCard from '../components/RiskScoreCard'
 import AttackChainGraph from '../components/AttackChainGraph'
-import { getAnalysis, getReport, getDecompiledTree, getDecompiledFile, downloadPdf } from '../api/client'
+import {
+  getAnalysis,
+  getAnalysisStatus,
+  getReport,
+  getActions,
+  getDecompiledTree,
+  getDecompiledFile,
+  downloadPdf,
+  downloadActionsPdf,
+} from '../api/client'
 
 function getLanguageFromFilename(filename) {
   const ext = filename?.split('.').pop()?.toLowerCase()
@@ -17,7 +27,14 @@ function getLanguageFromFilename(filename) {
   return map[ext] || 'text'
 }
 
-const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Decompiled Source']
+const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Actions', 'Decompiled Source']
+
+const PRIORITY_STYLE = {
+  P1: { bg: 'rgba(239,68,68,0.12)', color: '#ef4444', border: 'rgba(239,68,68,0.3)' },
+  P2: { bg: 'rgba(249,115,22,0.12)', color: '#f97316', border: 'rgba(249,115,22,0.3)' },
+  P3: { bg: 'rgba(234,179,8,0.12)', color: '#eab308', border: 'rgba(234,179,8,0.3)' },
+  P4: { bg: 'rgba(100,116,139,0.12)', color: '#94a3b8', border: 'rgba(100,116,139,0.3)' },
+}
 
 function PermBadge({ dangerous }) {
   return (
@@ -341,6 +358,7 @@ export default function Analysis() {
   const [tab, setTab] = useState(0)
   const [analysis, setAnalysis] = useState(null)
   const [report, setReport] = useState(null)
+  const [actionsData, setActionsData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [processingStatus, setProcessingStatus] = useState(null)
@@ -357,13 +375,15 @@ export default function Analysis() {
       // Use allSettled so one failing endpoint doesn't kill the entire page.
       // Previously: Promise.all — if report threw a 500, analysis page showed
       // 'check backend' even though analysis data was fine.
-      const [analysisResult, reportResult] = await Promise.allSettled([
+      const [analysisResult, reportResult, actionsResult] = await Promise.allSettled([
         getAnalysis(id),
         getReport(id),
+        getActions(id),
       ])
 
       const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value.data : null
       const reportData = reportResult.status === 'fulfilled' ? reportResult.value.data : null
+      const actionsPayload = actionsResult.status === 'fulfilled' ? actionsResult.value.data : null
 
       if (!analysisData) {
         setError('Failed to load analysis. Make sure the backend is running and this analysis exists.')
@@ -373,6 +393,7 @@ export default function Analysis() {
 
       setAnalysis(analysisData)
       setReport(reportData)
+      setActionsData(actionsPayload)
       setLoading(false)
 
       // If still processing, poll status every 4 seconds and reload when done
@@ -387,9 +408,14 @@ export default function Analysis() {
             if (newStatus === 'completed' || newStatus === 'failed') {
               clearInterval(pollInterval)
               // Reload full data now that pipeline finished
-              const [a2, r2] = await Promise.allSettled([getAnalysis(id), getReport(id)])
+              const [a2, r2, act2] = await Promise.allSettled([
+                getAnalysis(id),
+                getReport(id),
+                getActions(id),
+              ])
               if (a2.status === 'fulfilled') setAnalysis(a2.value.data)
               if (r2.status === 'fulfilled') setReport(r2.value.data)
+              if (act2.status === 'fulfilled') setActionsData(act2.value.data)
               setProcessingStatus(null)
             }
           } catch {
@@ -413,9 +439,26 @@ export default function Analysis() {
       a.click()
       window.URL.revokeObjectURL(url)
     } catch {
-      alert('PDF download failed')
+      alert('Report PDF download failed')
     }
   }
+
+  const handleDownloadActions = async () => {
+    try {
+      const res = await downloadActionsPdf(id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `actions-${id}.pdf`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      alert('Actions PDF download failed')
+    }
+  }
+
+  const actionItems = actionsData?.actions || []
+  const canDownloadActions = actionItems.length > 0
 
   // Extract nested report sections for easy access
   const risk = report?.risk_assessment || {}
@@ -485,9 +528,18 @@ export default function Analysis() {
               SHA256: {analysis?.sha256}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button onClick={handleDownloadPdf} className="btn-secondary" style={{ fontSize: 12 }}>
-              Download PDF
+              Download Report
+            </button>
+            <button
+              onClick={handleDownloadActions}
+              className="btn-secondary"
+              style={{ fontSize: 12, opacity: canDownloadActions ? 1 : 0.45 }}
+              disabled={!canDownloadActions}
+              title={canDownloadActions ? 'Download bank actions PDF' : 'No actions available yet'}
+            >
+              Download Actions
             </button>
             <span
               className={`badge badge-${(risk.severity || '').toLowerCase().replace(' ', '-') || 'pending'}`}
@@ -899,6 +951,71 @@ export default function Analysis() {
 
 
         {tab === 5 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="card" style={{ padding: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <ListChecks size={14} color="var(--cyan)" /> Recommended Bank Actions
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                    Operational playbook for SOC / Fraud / IT — separate from the investigation report.
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right' }}>
+                  Status: <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{actionsData?.status || 'missing'}</span>
+                  {actionsData?.generated_at && (
+                    <div style={{ marginTop: 4 }}>{new Date(actionsData.generated_at).toLocaleString()}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {actionItems.length > 0 ? (
+              actionItems.map((a, i) => {
+                const p = (a.priority || 'P3').toUpperCase()
+                const style = PRIORITY_STYLE[p] || PRIORITY_STYLE.P3
+                return (
+                  <div key={i} className="card" style={{ padding: 20, borderLeft: `3px solid ${style.color}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>
+                        {i + 1}. {a.title}
+                      </div>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 4, flexShrink: 0,
+                        background: style.bg, color: style.color, border: `1px solid ${style.border}`,
+                      }}>
+                        {p}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
+                      Owner: <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{a.owner || '—'}</span>
+                      {' · '}SLA: <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{a.sla || '—'}</span>
+                    </div>
+                    {Array.isArray(a.steps) && a.steps.length > 0 && (
+                      <ol style={{ margin: '0 0 12px 18px', padding: 0, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
+                        {a.steps.map((step, si) => (
+                          <li key={si} style={{ marginBottom: 4 }}>{step}</li>
+                        ))}
+                      </ol>
+                    )}
+                    {a.rationale && (
+                      <div style={{ fontSize: 12, color: 'var(--text-3)', borderTop: '1px solid var(--border)', paddingTop: 10, lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>Why: </span>{a.rationale}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+                No recommended actions yet. If analysis is complete, try regenerating via the API or re-upload the APK.
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 6 && (
           <div className="animate-fade-in">
             <DecompiledView apkId={id} />
           </div>

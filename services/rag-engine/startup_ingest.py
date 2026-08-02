@@ -18,17 +18,28 @@ KB_BASE = "/app/knowledge_base"
 
 
 def _wait_for_chroma(max_retries: int = 30, delay: int = 5) -> bool:
-    """Poll ChromaDB until it's available."""
+    """Poll ChromaDB until it's available (v2 heartbeat; v1 returns 410 on Chroma >=1.0)."""
     import httpx
-    url = f"http://{CHROMA_HOST}:{CHROMA_PORT}/api/v1/heartbeat"
+
+    urls = [
+        f"http://{CHROMA_HOST}:{CHROMA_PORT}/api/v2/heartbeat",
+        f"http://{CHROMA_HOST}:{CHROMA_PORT}/api/v1/heartbeat",
+    ]
     for attempt in range(max_retries):
-        try:
-            resp = httpx.get(url, timeout=5)
-            if resp.status_code == 200:
-                logger.info("ChromaDB is ready (attempt %d)", attempt + 1)
-                return True
-        except Exception as exc:
-            logger.info("ChromaDB not ready yet (attempt %d/%d): %s", attempt + 1, max_retries, exc)
+        for url in urls:
+            try:
+                resp = httpx.get(url, timeout=5)
+                if resp.status_code == 200:
+                    logger.info("ChromaDB is ready via %s (attempt %d)", url, attempt + 1)
+                    return True
+            except Exception as exc:
+                logger.info(
+                    "ChromaDB not ready yet (attempt %d/%d) %s: %s",
+                    attempt + 1,
+                    max_retries,
+                    url,
+                    exc,
+                )
         time.sleep(delay)
     logger.error("ChromaDB did not become ready after %d attempts", max_retries)
     return False

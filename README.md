@@ -6,7 +6,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-llama3:8b-black?style=flat-square)
+![Ollama](https://img.shields.io/badge/Ollama-llama3.2:3b-black?style=flat-square)
 ![XGBoost](https://img.shields.io/badge/XGBoost-2.0-FF6600?style=flat-square)
 
 ---
@@ -53,7 +53,7 @@ APK Upload
   ┌──────────────┐    ┌─────────────────────────┐
   │  RAG Engine  │    │   AI Investigation      │
   │  ChromaDB +  │───▶│   Engine (5 Agents)     │
-  │  BAAI/bge    │    │   llama3:8b-instruct     │
+  │  BAAI/bge    │    │   llama3.2:3b            │
   └──────────────┘    └──────────┬──────────────┘
                                  │
                     ┌────────────┴────────────┐
@@ -108,7 +108,7 @@ APK Upload
 
 ### AI & ML
 - **Ollama** — local LLM hosting
-- **llama3:8b-instruct** — threat summarization, fraud intent prediction
+- **llama3.2:3b** — threat summarization, fraud intent, bank action recommendations
 - **XGBoost** — risk score classification
 - **SHAP** — model explainability
 - **scikit-learn** — feature pipeline
@@ -178,8 +178,9 @@ BOI/
 │   ├── API.md
 │   ├── ARCHITECTURE.md
 │   └── DEMO.md
+├── infra/
+│   └── setup_ollama.ps1          # Pull required AI model (llama3.2:3b)
 ├── scripts/
-│   ├── setup_ollama.sh           # Pull required AI models
 │   └── run_pipeline.py           # End-to-end test runner
 └── tests/
     ├── test_backend.py
@@ -208,13 +209,22 @@ cp infra/.env.example infra/.env
 
 ### 2. Pull the AI model
 
-```bash
-# Option A — via Docker after starting Ollama container
-docker compose -f infra/docker-compose.yml up ollama -d
-docker exec -it infra-ollama-1 ollama pull llama3:8b-instruct
+Agents and the action recommender expect **`llama3.2:3b`**. Inside Docker Compose they call `http://ollama:11434`.
 
-# Option B — if Ollama is installed locally
-ollama pull llama3:8b-instruct
+```powershell
+# Windows (recommended)
+powershell -File infra/setup_ollama.ps1
+
+# Or manually:
+cd infra
+docker compose up -d ollama
+docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama list
+```
+
+```bash
+# Local Ollama (non-Docker services only)
+ollama pull llama3.2:3b
 ```
 
 ### 3. Start the full stack

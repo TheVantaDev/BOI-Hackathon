@@ -1,17 +1,14 @@
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
 from models.apk import APKUpload, AnalysisResult, RiskReport, ThreatIndicator
 from services.db import get_db
-
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+from services.pdf_utils import html_to_pdf, render_template
 
 router = APIRouter()
 
@@ -525,30 +522,13 @@ def get_report_summary(apk_id: str, db: Session = Depends(get_db)):
     }
 
 
-def _render_report_html(compiled: dict) -> str:
-    """Fill templates/report.html with the compiled report dict."""
-    env = Environment(
-        loader=FileSystemLoader(str(_TEMPLATES_DIR)),
-        autoescape=select_autoescape(["html", "xml"]),
-    )
-    return env.get_template("report.html").render(report=compiled)
-
-
-def _html_to_pdf(html: str) -> bytes:
-    """Convert HTML string to PDF bytes via WeasyPrint."""
-    # lazy import: native libs only needed when generating PDF (Docker has them)
-    from weasyprint import HTML
-
-    return HTML(string=html, base_url=str(_TEMPLATES_DIR)).write_pdf()
-
-
 @router.get("/{apk_id}/pdf")
 def download_pdf(apk_id: str, db: Session = Depends(get_db)):
     apk, analysis, existing_report, indicators = _load_report_inputs(apk_id, db)
     compiled = _compile_report(apk, analysis, indicators, existing_report)
 
-    html = _render_report_html(compiled)
-    pdf_bytes = _html_to_pdf(html)
+    html = render_template("report.html", report=compiled)
+    pdf_bytes = html_to_pdf(html)
 
     return StreamingResponse(
         BytesIO(pdf_bytes),

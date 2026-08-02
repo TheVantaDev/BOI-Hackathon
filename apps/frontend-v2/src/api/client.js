@@ -21,6 +21,8 @@ export const getAnalysis = (apkId) => api.get(`/analysis/${apkId}`);
 export const getAnalysisStatus = (apkId) => api.get(`/analysis/${apkId}/status`);
 export const getReport = (apkId) => api.get(`/reports/${apkId}`);
 export const downloadPdf = (apkId) => api.get(`/reports/${apkId}/pdf`, { responseType: 'blob' });
+export const getActions = (apkId) => api.get(`/actions/${apkId}`);
+export const downloadActionsPdf = (apkId) => api.get(`/actions/${apkId}/pdf`, { responseType: 'blob' });
 export const getDashboardStats = () => api.get('/dashboard/stats');
 export const getRecentUploads = (limit = 20) => api.get(`/dashboard/recent?limit=${limit}`);
 export const getDecompiledTree = (apkId, tool, path = '') =>

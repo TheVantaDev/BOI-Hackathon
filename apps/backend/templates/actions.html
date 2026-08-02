@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Recommended Actions — {{ data.filename or data.apk_id }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 20mm 16mm;
+      @bottom-center {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 8px;
+        color: #94a3b8;
+        font-family: DejaVu Sans, Liberation Sans, sans-serif;
+      }
+      @bottom-right {
+        content: "Sentinel · Bank Actions · Confidential";
+        font-size: 8px;
+        color: #cbd5e1;
+        font-family: DejaVu Sans, Liberation Sans, sans-serif;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: DejaVu Sans, Liberation Sans, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.55;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin: 0 0 4px 0;
+      color: #0f172a;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 11px;
+      margin-bottom: 18px;
+    }
+
+    .meta {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 10px;
+    }
+
+    .meta th, .meta td {
+      text-align: left;
+      padding: 6px 8px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .meta th {
+      width: 28%;
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 600;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-p1 { background: #fee2e2; color: #b91c1c; }
+    .badge-p2 { background: #ffedd5; color: #c2410c; }
+    .badge-p3 { background: #fef9c3; color: #a16207; }
+    .badge-p4 { background: #e2e8f0; color: #475569; }
+
+    .action {
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #0f766e;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+
+    .action-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .action-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .action-meta {
+      color: #64748b;
+      font-size: 9.5px;
+      margin-bottom: 8px;
+    }
+
+    .action-meta strong { color: #334155; }
+
+    ol {
+      margin: 6px 0 8px 18px;
+      padding: 0;
+    }
+
+    li { margin-bottom: 3px; }
+
+    .rationale {
+      color: #475569;
+      font-size: 9.5px;
+      border-top: 1px solid #f1f5f9;
+      padding-top: 6px;
+      margin-top: 6px;
+    }
+
+    .empty {
+      padding: 24px;
+      text-align: center;
+      color: #64748b;
+      border: 1px dashed #cbd5e1;
+    }
+
+    .note {
+      margin-top: 18px;
+      font-size: 9px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <h1>Recommended Bank Actions</h1>
+  <div class="subtitle">Operational playbook for this APK investigation — separate from the risk report.</div>
+
+  <table class="meta">
+    <tr><th>Filename</th><td>{{ data.filename or "—" }}</td></tr>
+    <tr><th>APK ID</th><td>{{ data.apk_id }}</td></tr>
+    <tr><th>SHA-256</th><td style="font-family: monospace; font-size: 9px;">{{ data.sha256 or "—" }}</td></tr>
+    <tr><th>Severity / Class</th><td>{{ severity or "—" }} · {{ classification or "—" }}{% if risk_score is not none %} (score {{ "%.1f"|format(risk_score) }}){% endif %}</td></tr>
+    <tr><th>Actions status</th><td>{{ data.status or "—" }}{% if data.generated_at %} · generated {{ data.generated_at }}{% endif %}</td></tr>
+  </table>
+
+  {% if data.actions %}
+    {% for a in data.actions %}
+      {% set p = (a.priority or "P3")|upper %}
+      <div class="action">
+        <div class="action-head">
+          <div class="action-title">{{ loop.index }}. {{ a.title }}</div>
+          <span class="badge badge-{{ p|lower }}">{{ p }}</span>
+        </div>
+        <div class="action-meta">
+          Owner: <strong>{{ a.owner or "—" }}</strong>
+          · SLA: <strong>{{ a.sla or "—" }}</strong>
+        </div>
+        {% if a.steps %}
+          <ol>
+            {% for step in a.steps %}
+              <li>{{ step }}</li>
+            {% endfor %}
+          </ol>
+        {% endif %}
+        {% if a.rationale %}
+          <div class="rationale"><strong>Why:</strong> {{ a.rationale }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">No recommended actions available for this sample yet.</div>
+  {% endif %}
+
+  <div class="note">
+    Status "{{ data.status }}" —
+    ready = AI+RAG, fallback = rule templates, failed/missing = generation unavailable.
+    This document is advisory and does not replace formal incident-response procedures.
+  </div>
+</body>
+</html>
