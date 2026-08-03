@@ -13,11 +13,15 @@ export default function Sidebar() {
       style={{
         width: '240px',
         minWidth: '240px',
-        background: 'var(--bg-secondary)',
+        background: 'rgba(13, 18, 38, 0.3)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         padding: '0',
+        zIndex: 10,
+        boxShadow: '4px 0 24px rgba(0, 0, 0, 0.1)'
       }}
     >
       {/* Logo */}

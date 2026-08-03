@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434")
 RAG_URL = os.getenv("RAG_ENGINE_URL", "http://localhost:8013")
 MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "30"))
 
 OWNERS = {"SOC", "Fraud", "IT", "Legal"}
 PRIORITIES = {"P1", "P2", "P3", "P4"}
@@ -144,7 +144,7 @@ def _fetch_rag_context(query: str) -> tuple:
             resp = httpx.post(
                 f"{RAG_URL}/retrieve",
                 json={"query": query, "top_k": 5},
-                timeout=30.0,
+                timeout=httpx.Timeout(20.0, connect=5.0),
             )
             resp.raise_for_status()
             results = resp.json().get("results", [])
@@ -170,7 +170,7 @@ def _call_llm(prompt: str) -> tuple:
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             format="json",
-            options={"temperature": 0.2, "num_predict": 900},
+            options={"temperature": 0.2, "num_predict": 400},
         )
         return resp["message"]["content"].strip(), None
     except Exception as exc:

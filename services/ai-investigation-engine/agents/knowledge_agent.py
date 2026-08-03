@@ -18,7 +18,7 @@ def _call_llm(prompt: str) -> str:
         resp = client.chat(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.3, "num_predict": 512},
+            options={"temperature": 0.3, "num_predict": 200},
         )
         return resp["message"]["content"].strip()
     except Exception as exc:

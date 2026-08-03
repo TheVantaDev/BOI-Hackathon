@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sentinel"]
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,6 +51,17 @@ services:
     restart: unless-stopped
     ports:
       - "11434:11434"
+    environment:
+      # 12-core i5-13420H — use all cores for inference.
+      # NUM_PARALLEL=2: 4 was too much — KV cache was 1.8GB causing OOM/load timeout.
+      #   With 2 parallel + ctx 2048: KV cache ~224MB (vs 1792MB before).
+      # CONTEXT_LENGTH=2048: agents only generate 200-400 tokens; 4096 wastes RAM.
+      # LOAD_TIMEOUT=3m: CPU-only model loading is slow; 1m default causes timeout.
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_CONTEXT_LENGTH: "2048"
+      OLLAMA_NUM_THREAD: "12"
+      OLLAMA_KEEP_ALIVE: "10m"
+      OLLAMA_LOAD_TIMEOUT: "3m"
     volumes:
       - ./data/ollama_models:/root/.ollama
 
@@ -196,7 +207,7 @@ services:
     environment:
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: llama3.2:3b
-      OLLAMA_TIMEOUT: "300"
+      OLLAMA_TIMEOUT: "60"
       RAG_ENGINE_URL: http://rag-engine:8013
     depends_on:
       - rag-engine

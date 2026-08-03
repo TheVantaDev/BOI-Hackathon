@@ -6,3 +6,5 @@ shap==0.45.1
 numpy==1.26.4
 pandas==2.2.2
 joblib==1.4.2
+ai-edge-litert>=1.0.1
+boto3>=1.34.0

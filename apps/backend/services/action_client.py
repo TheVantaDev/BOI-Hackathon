@@ -8,8 +8,8 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# One LLM call + RAG; shorter than full /investigate
-_TIMEOUT = httpx.Timeout(180.0, connect=10.0)
+# One LLM call (30s) + RAG (20s) + overhead; never blocks pipeline more than a minute
+_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
 def fetch_recommended_actions(payload: Dict[str, Any]) -> Dict[str, Any]:

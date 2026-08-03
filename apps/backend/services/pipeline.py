@@ -143,6 +143,7 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
             "dynamic": dynamic,
             "threat_intel": threat_intel,
             "ai_confidence": ai_result.get("confidence", 0.0),
+            "minio_path": minio_path,  # CNN needs raw APK for DEX extraction
         }
         score_result = await _post(
             client, f"{settings.risk_scoring_url}/score", scoring_payload, timeout=TIMEOUT_STANDARD

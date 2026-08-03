@@ -1,13 +1,18 @@
 """
-model.py — Risk scoring using DREBIN-215 raw feature XGBoost model.
+model.py — Risk scoring using DREBIN-215 XGBoost + CNN ensemble.
 
-Model trained with binary:logistic outputs a single p(malicious) float.
-Score formula:  risk_score = p_malicious × 100.0
+Two models run in parallel on the same DREBIN feature vector:
+  1. XGBoost (binary:logistic) → p(malicious)
+  2. CNN (TFLite, bytecode visualization) → p(malicious)
+
+Final score = 0.5 × XGBoost + 0.5 × CNN  (ensemble)
+Falls back to XGBoost-only if CNN is unavailable.
 """
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -21,11 +26,18 @@ from feature_extractor import (
 logger = logging.getLogger(__name__)
 
 MODEL_PATH = Path(os.getenv("MODEL_PATH", "/app/models/xgb_risk_model.json"))
+CNN_MODEL_PATH = Path(os.getenv("CNN_MODEL_PATH", "/app/models/cnn_malware_model.tflite"))
+CNN_META_PATH  = Path(os.getenv("CNN_META_PATH",  "/app/models/cnn_metadata.json"))
 
 CLASS_NAMES  = ["Benign", "Malicious"]
 SEVERITY_MAX = 100.0  # p_malicious × 100.0  (full probability → full score range)
 
+XGB_WEIGHT = 0.5   # ensemble weight for XGBoost
+CNN_WEIGHT = 0.5   # ensemble weight for CNN
+
 _model = None
+_cnn_interpreter = None
+_cnn_meta = None
 
 
 def _load_model():
@@ -37,7 +49,6 @@ def _load_model():
         import xgboost as xgb
         _model = xgb.Booster()
         _model.load_model(str(MODEL_PATH))
-        # Pre-load feature names so the first request is fast
         _load_feature_names()
         logger.info("Loaded XGBoost model from %s", MODEL_PATH)
     else:
@@ -47,14 +58,40 @@ def _load_model():
     return _model
 
 
+def _load_cnn():
+    """Load TFLite CNN model for ensemble scoring."""
+    global _cnn_interpreter, _cnn_meta
+    if _cnn_interpreter is not None:
+        return _cnn_interpreter
+
+    if not CNN_MODEL_PATH.exists():
+        logger.info("No CNN model at %s — using XGBoost only", CNN_MODEL_PATH)
+        return None
+
+    try:
+        try:
+            from ai_edge_litert import interpreter as tflite
+        except ImportError:
+            import tflite_runtime.interpreter as tflite
+        _cnn_interpreter = tflite.Interpreter(model_path=str(CNN_MODEL_PATH))
+        _cnn_interpreter.allocate_tensors()
+
+        if CNN_META_PATH.exists():
+            with open(CNN_META_PATH) as f:
+                _cnn_meta = json.load(f)
+
+        logger.info("Loaded CNN (TFLite) model from %s", CNN_MODEL_PATH)
+        return _cnn_interpreter
+    except Exception as exc:
+        logger.warning("Failed to load CNN model: %s", exc)
+        return None
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _get_p_malicious(model, raw_data: dict) -> float:
     """
     Run the XGBoost model and return p(malicious) in [0, 1].
-
-    The new model uses binary:logistic so model.predict() returns a
-    1-D array of shape (n_samples,) — one probability per sample.
     """
     import xgboost as xgb
     from feature_extractor import DREBIN_FEATURE_NAMES, _load_feature_names
@@ -73,13 +110,102 @@ def _get_p_malicious(model, raw_data: dict) -> float:
     raw = model.predict(dmatrix, **kwargs)
     raw = np.array(raw).ravel()
 
-    # binary:logistic → shape (1,): single p(malicious)
     if raw.shape[0] == 1:
         return float(raw[0])
 
-    # Fallback: multi:softprob with 2 classes → shape (1, 2)
     proba = raw.reshape(-1, 2)
     return float(proba[0][1])
+
+
+def _get_cnn_p_malicious(raw_data: dict) -> Optional[float]:
+    """
+    Run the CNN model on RAW DEX bytecode from the APK.
+
+    1. Download APK from MinIO using minio_path
+    2. Extract classes.dex from the APK (it's a zip)
+    3. Convert raw bytes → 64x64 grayscale image
+    4. Run TFLite CNN inference
+    """
+    interpreter = _load_cnn()
+    if interpreter is None:
+        return None
+
+    minio_path = raw_data.get("minio_path")
+    if not minio_path:
+        logger.info("No minio_path in request — skipping CNN")
+        return None
+
+    try:
+        import zipfile
+        import io
+
+        # ── 1. Download APK from MinIO ──
+        import boto3
+        from botocore.client import Config
+
+        endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
+        access_key = os.getenv("MINIO_ACCESS_KEY", "sentinel_minio")
+        secret_key = os.getenv("MINIO_SECRET_KEY", "sentinel_minio_pass")
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=f"http://{endpoint}",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(signature_version="s3v4"),
+            region_name="us-east-1",
+        )
+
+        parts = minio_path.split("/", 1)
+        bucket = parts[0]
+        key = parts[1] if len(parts) > 1 else parts[0]
+
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        apk_bytes = resp["Body"].read()
+        logger.info("CNN: Downloaded APK (%d bytes) from %s", len(apk_bytes), minio_path)
+
+        # ── 2. Extract classes.dex ──
+        with zipfile.ZipFile(io.BytesIO(apk_bytes), 'r') as zf:
+            dex_files = [n for n in zf.namelist() if n.endswith('.dex')]
+            if not dex_files:
+                logger.warning("CNN: No .dex files found in APK")
+                return None
+            dex_data = zf.read(dex_files[0])
+
+        logger.info("CNN: Extracted %s (%d bytes)", dex_files[0], len(dex_data))
+
+        # ── 3. Convert DEX bytes → grayscale image ──
+        img_size = 64
+        if _cnn_meta and "input_shape" in _cnn_meta:
+            img_size = _cnn_meta["input_shape"][0]
+
+        total = img_size * img_size
+        byte_array = np.frombuffer(dex_data, dtype=np.uint8)
+
+        if len(byte_array) >= total:
+            byte_array = byte_array[:total]
+        else:
+            byte_array = np.pad(byte_array, (0, total - len(byte_array)), mode='constant')
+
+        img = byte_array.reshape(img_size, img_size)
+
+        # Normalize and reshape for CNN: (1, H, W, 1)
+        img_input = img.astype(np.float32) / 255.0
+        img_input = img_input.reshape(1, img_size, img_size, 1)
+
+        # ── 4. Run TFLite CNN inference ──
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        interpreter.set_tensor(input_details[0]['index'], img_input)
+        interpreter.invoke()
+
+        p_mal = float(interpreter.get_tensor(output_details[0]['index'])[0][0])
+        logger.info("CNN: p(malicious) = %.4f (from raw DEX bytes)", p_mal)
+        return p_mal
+
+    except Exception as exc:
+        logger.warning("CNN prediction failed: %s", exc)
+        return None
 
 
 def _confirmed_signal(raw_data: dict) -> bool:
@@ -109,7 +235,15 @@ def predict_score(features: np.ndarray, _raw_data: dict = None) -> float:
         return _heuristic_score(features)
 
     try:
-        p_mal = _get_p_malicious(model, _raw_data or {})
+        p_mal_xgb = _get_p_malicious(model, _raw_data or {})
+        p_mal_cnn = _get_cnn_p_malicious(_raw_data or {})
+
+        # Ensemble: combine XGBoost + CNN (or XGBoost-only if CNN unavailable)
+        if p_mal_cnn is not None:
+            p_mal = XGB_WEIGHT * p_mal_xgb + CNN_WEIGHT * p_mal_cnn
+            logger.info("Ensemble: XGB=%.3f, CNN=%.3f → combined=%.3f", p_mal_xgb, p_mal_cnn, p_mal)
+        else:
+            p_mal = p_mal_xgb
 
         # score = p(malicious) × 100
         risk_score = round(min(max(p_mal * SEVERITY_MAX, 0.0), 100.0), 1)

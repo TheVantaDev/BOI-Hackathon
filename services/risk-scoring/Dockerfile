@@ -7,12 +7,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Copy model files — both are required:
-#   xgb_risk_model.json       : trained XGBoost weights
-#   drebin_feature_names.json : exact 214 feature names used at training time
+# Copy model files — XGBoost + CNN ensemble:
 RUN mkdir -p /app/models
 COPY models/xgb_risk_model.json /app/models/xgb_risk_model.json
 COPY models/drebin_feature_names.json /app/models/drebin_feature_names.json
+COPY models/cnn_malware_model.tflite /app/models/cnn_malware_model.tflite
+COPY models/cnn_metadata.json /app/models/cnn_metadata.json
 
 ENV MODEL_PATH=/app/models/xgb_risk_model.json
 

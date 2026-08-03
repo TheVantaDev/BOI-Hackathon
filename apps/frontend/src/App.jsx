@@ -7,9 +7,11 @@ import History from './pages/History'
 
 export default function App() {
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)' }}>
+    <>
+      <div className="app-bg" />
+      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+        <Sidebar />
+        <main style={{ flex: 1, overflowY: 'auto', background: 'transparent' }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/upload" element={<Upload />} />
@@ -19,5 +21,6 @@ export default function App() {
         </Routes>
       </main>
     </div>
+    </>
   )
 }
