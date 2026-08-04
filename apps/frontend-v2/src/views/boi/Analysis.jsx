@@ -299,6 +299,7 @@ export default function BoiAnalysis() {
         <Box sx={{ p: 3 }}>
           <TabFade tabKey={tab}>
           {tab === 0 && (
+            <>
             <Grid container spacing={gridSpacing} alignItems="stretch">
               <Grid size={{ xs: 12, md: 6 }} sx={{ display: 'flex' }}>
                 <MainCard
@@ -343,6 +344,73 @@ export default function BoiAnalysis() {
                 </MainCard>
               </Grid>
             </Grid>
+              {(report?.shap_explainability || []).filter(s => s.shap_value > 0).length > 0 && (
+                <MainCard
+                  title={
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <IconActivity size={16} color={theme.palette.primary.main} />
+                      <span>SHAP Feature Importance - What Drove the Risk Score</span>
+                    </Stack>
+                  }
+                  sx={{ mt: 2 }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+                    Each bar shows how much a feature increased (red) or decreased (green) the malware risk score. Based on SHAP (SHapley Additive exPlanations) values from the XGBoost model.
+                  </Typography>
+                  <Stack spacing={0.75}>
+                    {(report?.shap_explainability || [])
+                      .filter(s => s.shap_value > 0.001)
+                      .sort((a, b) => b.shap_value - a.shap_value)
+                      .slice(0, 15)
+                      .map((s, i) => {
+                        const maxShap = Math.max(
+                          ...(report?.shap_explainability || []).filter(x => x.shap_value > 0).map(x => x.shap_value),
+                          0.01
+                        );
+                        const pct = Math.min((s.shap_value / maxShap) * 100, 100);
+                        const isRisk = s.direction === 'increases_risk';
+                        return (
+                          <Stack key={i} direction="row" alignItems="center" spacing={1.5}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontFamily: 'monospace',
+                                minWidth: 180,
+                                textAlign: 'right',
+                                color: 'text.secondary',
+                                fontSize: 11,
+                              }}
+                            >
+                              {s.feature}
+                            </Typography>
+                            <Box sx={{ flex: 1, position: 'relative', height: 18, bgcolor: 'grey.100', borderRadius: 1, overflow: 'hidden' }}>
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  left: 0,
+                                  top: 0,
+                                  height: '100%',
+                                  width: `${pct}%`,
+                                  bgcolor: isRisk ? 'error.main' : 'success.main',
+                                  borderRadius: 1,
+                                  opacity: 0.75,
+                                  transition: 'width 0.6s ease',
+                                }}
+                              />
+                            </Box>
+                            <Chip
+                              size="small"
+                              label={s.value > 0 ? 'PRESENT' : 'ABSENT'}
+                              color={s.value > 0 ? (isRisk ? 'error' : 'success') : 'default'}
+                              sx={{ minWidth: 70, fontSize: 10, height: 20 }}
+                            />
+                          </Stack>
+                        );
+                      })}
+                  </Stack>
+                </MainCard>
+              )}
+            </>
           )}
 
           {tab === 1 && (
@@ -432,6 +500,31 @@ export default function BoiAnalysis() {
                 {!sa.hardcoded_urls?.length && (
                   <Typography variant="body2" color="text.secondary">
                     None found.
+                  </Typography>
+                )}
+              </MainCard>
+
+              <MainCard title="QuarkEngine Behavioral Crime Analysis">
+                <Grid container spacing={2}>
+                  {[
+                    { label: 'Crime Count', value: sa.quark_crime_count ?? 0 },
+                    { label: 'Max Confidence', value: sa.quark_max_confidence != null ? `${(sa.quark_max_confidence * 100).toFixed(0)}%` : '0%' },
+                    { label: 'Banking Crime', value: sa.quark_banking_crime ? 'Detected' : 'Clean', color: sa.quark_banking_crime ? 'error.main' : 'success.dark' },
+                    { label: 'SMS Crime', value: sa.quark_sms_crime ? 'Detected' : 'Clean', color: sa.quark_sms_crime ? 'error.main' : 'success.dark' },
+                  ].map((item) => (
+                    <Grid key={item.label} size={{ xs: 6, md: 3 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, bgcolor: 'grey.50', boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)' }}>
+                        <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+                        <Typography variant="subtitle1" fontWeight={700} sx={{ mt: 0.5 }} color={item.color || 'text.primary'}>
+                          {item.value}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  ))}
+                </Grid>
+                {!sa.quark_crime_count && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+                    QuarkEngine detected no malicious API call sequences — no behavioral crime patterns found.
                   </Typography>
                 )}
               </MainCard>
@@ -593,7 +686,7 @@ export default function BoiAnalysis() {
               </MainCard>
 
               <MainCard title="Fraud Journey & Attack Vector Reconstruction">
-                <AttackChainGraph height={300} />
+                <AttackChainGraph elements={(() => { const j = fraudAnalysis.journey_stages; if (!j?.nodes?.length) return undefined; return [...j.nodes.map(n => ({ data: n.data, position: n.position })), ...j.edges]; })()} height={300} />
               </MainCard>
             </Stack>
           )}
@@ -651,7 +744,7 @@ export default function BoiAnalysis() {
                 title="AI Investigation Report"
                 secondary={
                   <Stack direction="row" spacing={1}>
-                    <Chip size="small" label="llama3:8b" color="primary" />
+                    <Chip size="small" label="llama3.2:3b" color="primary" />
                     {aiData.classification && <Chip size="small" label={aiData.classification} color="error" />}
                     {confidence != null && <Chip size="small" label={`Confidence: ${confidence}%`} color="secondary" />}
                   </Stack>

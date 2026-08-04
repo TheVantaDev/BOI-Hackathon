@@ -112,6 +112,10 @@ async def run_pipeline(apk_id: str, minio_path: str, sha256: str) -> Dict[str, A
             "ips":     static.get("hardcoded_ips", []),
             "hashes":  [sha256],
             "urls":    raw_urls[:10],
+            # Static signals for MITRE ATT&CK mapping
+            "permissions": static.get("permissions", []),
+            "suspicious_apis": static.get("suspicious_apis", []),
+            "dynamic_code_loading": bool(static.get("dynamic_code_loading")),
         }
         threat_intel = await _post(
             client, f"{settings.threat_intel_url}/lookup", iocs, timeout=TIMEOUT_STANDARD

@@ -20,6 +20,10 @@ class IOCPayload(BaseModel):
     ips: List[str] = []
     hashes: List[str] = []
     urls: List[str] = []
+    # Static analysis signals for MITRE mapping (optional)
+    permissions: List[dict] = []
+    suspicious_apis: List[str] = []
+    dynamic_code_loading: bool = False
 
 
 @app.post("/lookup")
@@ -39,15 +43,28 @@ async def lookup_iocs(payload: IOCPayload):
     all_indicators = list(domain_results) + list(ip_results) + list(hash_results) + url_results
     malicious = [i for i in all_indicators if i["malicious"]]
 
-    # Build MITRE mapping from actual threat intel findings.
-    # Previous bug: passed domain strings as permission names to map_to_mitre(),
-    # which only looks up Android permission/API names — always returned empty.
+    # Build MITRE mapping from TWO sources:
+    # 1. IOC findings (malicious domains/IPs/URLs → C2, phishing techniques)
     mitre_from_iocs = _mitre_from_ioc_findings(
         malicious_domains=[i["indicator"] for i in domain_results if i["malicious"]],
         malicious_ips=[i["indicator"] for i in ip_results if i["malicious"]],
         malicious_hashes=[i["indicator"] for i in hash_results if i["malicious"]],
         malicious_urls=[i["indicator"] for i in url_results if i["malicious"]],
     )
+
+    # 2. Static analysis signals (permissions/APIs → collection, discovery, impact)
+    static_context = {
+        "permissions": payload.permissions,
+        "suspicious_apis": payload.suspicious_apis,
+        "dynamic_code_loading": payload.dynamic_code_loading,
+    }
+    mitre_from_static = map_to_mitre(static_context)
+
+    # Merge both sources, dedup by technique ID
+    all_mitre = {t["id"]: t for t in mitre_from_iocs}
+    for t in mitre_from_static:
+        if t["id"] not in all_mitre:
+            all_mitre[t["id"]] = t
 
     return {
         "indicators": all_indicators,
@@ -56,7 +73,7 @@ async def lookup_iocs(payload: IOCPayload):
         "malicious_ips": [i["indicator"] for i in ip_results if i["malicious"]],
         "malicious_hashes": [i["indicator"] for i in hash_results if i["malicious"]],
         "malicious_urls": [i["indicator"] for i in url_results if i["malicious"]],
-        "mitre_techniques": mitre_from_iocs,
+        "mitre_techniques": list(all_mitre.values()),
         "sources_used": ["urlhaus", "openphish", "abuseipdb", "malwarebazaar", "local_blocklist"],
     }
 

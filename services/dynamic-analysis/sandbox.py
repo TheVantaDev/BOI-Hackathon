@@ -703,17 +703,24 @@ async def _run_adb_frida_analysis(
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
 async def run_dynamic_analysis(apk_id: str, minio_path: str, sha256: str = ""):
+    """
+    Primary: ADB + Frida (our own 7 custom instrumentation scripts).
+    Fallback: MobSF dynamic analysis (if ADB/emulator unavailable).
+
+    This matches the hackathon submission architecture:
+      Android Emulator → ADB → Frida instrumentation → Logcat capture.
+    """
 
     try:
-        return await _run_mobsf_analysis(apk_id, minio_path, sha256=sha256)
+        return await _run_adb_frida_analysis(apk_id, minio_path, sha256=sha256)
 
     except Exception as e:
         logger.warning(
-            "MobSF failed (%s). Falling back to ADB+Frida",
+            "ADB+Frida failed (%s). Falling back to MobSF dynamic analysis",
             e
         )
 
-        return await _run_adb_frida_analysis(
+        return await _run_mobsf_analysis(
             apk_id,
             minio_path,
             sha256=sha256,
