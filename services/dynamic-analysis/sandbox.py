@@ -36,6 +36,15 @@ FRIDA_SCRIPT_ORDER = [
     "overlay_detector.js",
     "dex_loader_monitor.js",
     "accessibility_monitor.js",
+
+    # Additional monitoring
+    "telephony_monitor.js",
+    "file_monitor.js",
+    "process_monitor.js",
+    "debug_monitor.js",
+    "webview_monitor.js",
+    "native_load_monitor.js",
+    "location_monitor.js",
 ]
 
 
@@ -153,17 +162,31 @@ async def _inject_frida_scripts(file_hash: str) -> dict:
 
     frida_results = {
         "scripts_injected": [s for s in FRIDA_SCRIPT_ORDER if (FRIDA_SCRIPTS_DIR / s).exists()],
+
         "network_requests": [],
         "decrypted_strings": [],
         "encryption_keys": [],
+
         "sms_intercepted": [],
         "sms_sent": [],
         "otp_interceptions": [],
+
         "overlays_detected": [],
         "ats_actions": [],
         "dex_loads": [],
+
         "accessibility_events": [],
         "emulation_checks_bypassed": [],
+
+        # Newly added monitors
+        "telephony_queries": [],
+        "file_operations": [],
+        "process_events": [],
+        "debugger_checks": [],
+        "webview_urls": [],
+        "native_libraries": [],
+        "location_requests": [],
+
         "raw_events": [],
     }
 
@@ -301,6 +324,46 @@ def _parse_frida_events(raw_logs: list, results: dict) -> None:
                 results["dex_loads"].append({
                     "type": "reflection_class_load",
                     "class_name": event.get("class_name"),
+                })
+            elif event_type == "telephony":
+                results["telephony_queries"].append({
+                    "method": event.get("method"),
+                    "value": event.get("value"),
+                })
+            elif event_type == "file_operation":
+                results["file_operations"].append({
+                    "operation": event.get("operation"),
+                    "path": event.get("path"),
+                    "extra": event.get("extra", {}),
+                })
+
+            elif event_type == "process_execution":
+                results["process_events"].append({
+                    "command": event.get("command"),
+                    "source": event.get("source"),
+                })
+
+            elif event_type == "debug_check":
+                results["debugger_checks"].append({
+                    "debugger_detected": event.get("debugger_detected"),
+                })
+
+            elif event_type == "webview":
+                results["webview_urls"].append({
+                    "url": event.get("url"),
+                })
+
+            elif event_type == "native_library":
+                results["native_libraries"].append({
+                    "method": event.get("method"),
+                    "library": event.get("library"),
+                })
+
+            elif event_type == "location_access":
+                results["location_requests"].append({
+                    "provider": event.get("provider"),
+                    "latitude": event.get("latitude"),
+                    "longitude": event.get("longitude"),
                 })
 
         except (json.JSONDecodeError, AttributeError):
@@ -494,6 +557,14 @@ async def _run_mobsf_analysis(apk_id: str, minio_path: str, sha256: str = ""):
     await _mobsf_scan(file_hash)
 
     await _mobsf_start_dynamic(file_hash)
+
+    logger.info("Waiting for MobSF to initialize dynamic analysis...")
+
+    # Give MobSF time to install the APK, launch it on the emulator,
+    # and prepare the Frida instrumentation environment.
+    await asyncio.sleep(10)
+
+    logger.info("Injecting custom Frida scripts...")
 
     frida_results = await _inject_frida_scripts(
         file_hash
