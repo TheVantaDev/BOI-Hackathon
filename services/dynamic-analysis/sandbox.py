@@ -678,7 +678,8 @@ async def _run_adb_frida_analysis(
                     )
                     subprocess.run(
                         [
-                            "frida", "-U", "-l", script_path,
+                            "frida", "-H", "host.docker.internal:27042",
+                            "-l", script_path,
                             "-f", installed_pkg,
                             "--no-pause",
                             "--runtime=v8",
