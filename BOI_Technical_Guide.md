@@ -15,7 +15,7 @@
 7. [RAG Knowledge Engine (Port 8013)](#7-rag-knowledge-engine-port-8013)
 8. [AI Investigation Engine — Multi-Agent System (Port 8014)](#8-ai-investigation-engine--multi-agent-system-port-8014)
 9. [Fraud Intent Engine (Port 8015)](#9-fraud-intent-engine-port-8015)
-10. [Risk Scoring Engine — XGBoost + CNN Ensemble (Port 8016)](#10-risk-scoring-engine--xgboost--cnn-ensemble-port-8016)
+10. [Risk Scoring Engine — XGBoost (Port 8016)](#10-risk-scoring-engine--xgboost-port-8016)
 11. [ML Datasets — What We Trained On](#11-ml-datasets--what-we-trained-on)
 12. [Feature Extraction — Connecting Static Analysis to ML](#12-feature-extraction--connecting-static-analysis-to-ml)
 13. [The Mathematics Behind Every ML Component](#13-the-mathematics-behind-every-ml-component)
@@ -45,7 +45,7 @@ The platform is built as **7 independent FastAPI microservices**, each in its ow
 | 4 | **RAG Engine** | 8013 | ChromaDB + BAAI/bge-small vector retrieval |
 | 5 | **AI Investigation Engine** | 8014 | 5-agent Ollama (llama3.2:3b) orchestration |
 | 6 | **Fraud Intent Engine** | 8015 | Attack intent prediction + Cytoscape journey graph |
-| 7 | **Risk Scoring** | 8016 | XGBoost + CNN ensemble with SHAP explainability |
+| 7 | **Risk Scoring** | 8016 | XGBoost with SHAP explainability |
 
 **Supporting Infrastructure:**
 - **PostgreSQL 15** — Stores APK metadata, analysis results, risk reports (SQLAlchemy ORM)
@@ -382,34 +382,17 @@ Predicts the attacker's objective and builds a visual attack chain (fraud journe
 
 ---
 
-# 10. Risk Scoring Engine — XGBoost + CNN Ensemble (Port 8016)
+# 10. Risk Scoring Engine — XGBoost (Port 8016)
 
 ### What It Does
-Produces the final 0-100 risk score using an ensemble of two ML models + SHAP explainability.
+Produces the final 0-100 risk score using an XGBoost ML model + SHAP explainability.
 
-### The Ensemble Formula
-```
-Final_p_malicious = 0.5 × XGBoost_probability + 0.5 × CNN_probability
-Risk_Score = Final_p_malicious × 100   (clamped to 0-100)
-```
-If CNN model is unavailable, falls back to XGBoost-only.
-
-### Model A: XGBoost (Gradient Boosted Trees)
+### The Model: XGBoost (Gradient Boosted Trees)
 - **Trained on:** DREBIN-215 feature schema (215 binary features)
 - **Objective:** `binary:logistic` (outputs probability of maliciousness)
 - **Input:** 215-dimensional binary feature vector (`[1.0, 0.0, 0.0, 1.0, ...]`)
 - **Output:** `p(malicious)` ∈ [0, 1]
-
-### Model B: CNN (Convolutional Neural Network via TFLite)
-- **Input:** Raw DEX bytecode from the APK converted to a grayscale image
-- **Process:**
-  1. Downloads APK from MinIO
-  2. Extracts `classes.dex` from the APK zip
-  3. Reads raw bytes into a 1D NumPy array
-  4. Reshapes to **64×64 2D matrix** (pads or truncates to exactly 4096 bytes)
-  5. Normalizes pixel values: `img / 255.0`
-  6. Runs TFLite CNN inference
-- **Output:** `p(malicious)` ∈ [0, 1] via sigmoid activation
+- **Final Risk Score:** `p_malicious × 100` (clamped to 0-100)
 
 ### Confidence-Aware Safety Caps (Preventing False Positives)
 When NO confirmed runtime/IOC signals exist (no YARA, no SMS interception, no overlay, no malicious IOCs):
@@ -451,16 +434,14 @@ Score = normalized weighted sum, capped at 35 if no dynamic/runtime signals.
 | Dataset | Description | Used For |
 |---------|-------------|----------|
 | **DREBIN** | ~5,500 malware + benign samples. Provides the 215-feature binary feature schema (permissions, API calls, intents, shell commands) | XGBoost model training (primary) |
-| **AndroZoo** | Large-scale APK repository (millions of apps) | Raw DEX bytecode augmentation for CNN training |
 | **CICMalDroid 2024** | Behavioral Android malware data (banking trojans, ransomware, SMS stealers) | Model validation against modern malware |
 | **AMD** | Android Malware Dataset with family identification | Additional malicious samples to prevent overfitting to older DREBIN data |
 
-### Training Notebooks (5 iterations in the codebase)
+### Training Notebooks (4 iterations in the codebase)
 1. `BOI(1).ipynb` — Initial exploration
-2. `BOI_Sentinel_CNN_v1.ipynb` — CNN bytecode visualization model
-3. `BOI_Sentinel_DREBIN_RawFeatures_v3.ipynb` — DREBIN raw feature extraction
-4. `BOI_Sentinel_Retrain_DREBIN215_AutoDownload_v2.ipynb` — Automated DREBIN dataset download + retrain
-5. `BOI_Sentinel_Train_v4.ipynb` — Final production training pipeline
+2. `BOI_Sentinel_DREBIN_RawFeatures_v3.ipynb` — DREBIN raw feature extraction
+3. `BOI_Sentinel_Retrain_DREBIN215_AutoDownload_v2.ipynb` — Automated DREBIN dataset download + retrain
+4. `BOI_Sentinel_Train_v4.ipynb` — Final production training pipeline
 
 ---
 
@@ -564,26 +545,7 @@ For tree-based models, **TreeSHAP** computes this in O(TL·D) time (T = trees, L
 
 **Guarantee:** The sum of all SHAP values = model prediction - base prediction. This means the explanation is mathematically complete.
 
-### C. CNN — Bytecode Visualization
-
-**DEX → Image Conversion:**
-```python
-byte_array = np.frombuffer(dex_data, dtype=np.uint8)  # raw bytes
-img = byte_array[:4096].reshape(64, 64)                # 64×64 matrix
-img_input = img.astype(np.float32) / 255.0              # normalize [0,1]
-img_input = img_input.reshape(1, 64, 64, 1)             # batch, H, W, channels
-```
-
-**Convolutional Layers:**
-Each convolutional layer applies learned 2D kernels (e.g., 3×3 filters) via matrix convolution:
-```
-Output[i,j] = Σ Σ Input[i+m, j+n] × Kernel[m, n] + bias
-```
-The kernels learn to detect spatial patterns in the bytecode (e.g., packed/encrypted sections appear as uniform gray blocks, obfuscated code shows high entropy randomness).
-
-**Final layer:** Sigmoid activation → `p(malicious) = σ(z) = 1/(1+e^(-z))`
-
-### D. Cosine Similarity (RAG Retrieval)
+### C. Cosine Similarity (RAG Retrieval)
 
 ```
 Similarity(A, B) = (A · B) / (||A|| × ||B||)
@@ -593,7 +555,7 @@ Similarity(A, B) = (A · B) / (||A|| × ||B||)
 - Dot product measures alignment; magnitude normalization makes it scale-invariant
 - Result ∈ [-1, 1]; closer to 1 = more semantically similar
 
-### E. Sentence Embedding (BAAI/bge-small-en-v1.5)
+### D. Sentence Embedding (BAAI/bge-small-en-v1.5)
 
 - **Architecture:** 33M parameter BERT-based encoder
 - **Output:** 384-dimensional dense vector per text chunk
@@ -614,7 +576,7 @@ Similarity(A, B) = (A · B) / (||A|| × ||B||)
 | `rag-engine` | Custom Python 3.11 | ChromaDB client + sentence-transformers |
 | `ai-investigation-engine` | Custom Python 3.11 | Ollama client (multi-agent) |
 | `fraud-intent-engine` | Custom Python 3.11 | Ollama client + journey builder |
-| `risk-scoring` | Custom Python 3.11 | XGBoost + TFLite + SHAP |
+| `risk-scoring` | Custom Python 3.11 | XGBoost + SHAP |
 | `postgres` | PostgreSQL 15 | Relational database |
 | `minio` | MinIO | S3-compatible APK object storage |
 | `chromadb` | ChromaDB | Vector database for RAG |
@@ -670,9 +632,6 @@ A: Five mechanisms work together:
 
 **Q: What happens when the analysis pipeline crashes mid-way?**
 A: Every service returns safe/neutral defaults on failure (stub results with `_stub: true`). The pipeline never fabricates malware signals. If MobSF fails → falls back to ADB+Frida. If ADB fails → returns `source: "unavailable"`. If Ollama fails → agents return template-based summaries. If ChromaDB fails → RAG returns hardcoded MITRE fallback context.
-
-**Q: Why the CNN ensemble? Isn't XGBoost enough?**
-A: XGBoost operates on extracted feature strings — it can only see what Androguard explicitly extracts. The CNN operates on raw DEX bytecode converted to a grayscale image. It catches visual patterns of packed, encrypted, or heavily obfuscated malware that Androguard's string-based extraction might miss entirely. The 50/50 ensemble combines the best of both approaches.
 
 **Q: How does QuarkEngine differ from just checking permissions?**
 A: Permissions alone are misleading — a legitimate SMS app has `SEND_SMS` permission. QuarkEngine uses **Order Theory** to trace API call SEQUENCES at the bytecode level. It detects that `getDeviceId()` is called BEFORE `sendTextMessage()` — meaning the app is reading the device ID and then sending it via SMS (data exfiltration). A legitimate app would never have this sequence. This is why QuarkEngine gives near-zero scores to benign apps even if they have dangerous permissions.

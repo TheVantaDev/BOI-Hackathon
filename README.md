@@ -173,7 +173,7 @@ BOI/
 │   ├── postgres/init.sql         # DB schema
 │   └── .env.example              # Environment variable template
 │
-├── datasets/                     # Training data (AndroZoo, Drebin, etc.)
+├── datasets/                     # Training data (Drebin, etc.)
 ├── docs/
 │   ├── API.md
 │   ├── ARCHITECTURE.md
@@ -382,7 +382,6 @@ Training data sources for the ML model:
 
 | Dataset | Description |
 |---|---|
-| [AndroZoo](https://androzoo.uni.lu/) | Large-scale Android APK repository |
 | [Drebin](https://www.sec.cs.tu-bs.de/~danarp/drebin/) | Android malware classification |
 | [CICMalDroid 2024](https://www.unb.ca/cic/datasets/) | Android malware behavioral data |
 | [AMD](http://amd.arguslab.org/) | Android malware family identification |
