@@ -2,7 +2,7 @@
  * Process Monitor
  * Detects Runtime.exec() and ProcessBuilder execution.
  *
- * For: Bank of India Sentinel
+ * For: Bank of India Cognidroid
  */
 
 "use strict";

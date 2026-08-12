@@ -1,6 +1,6 @@
 CERT-In Advisory: Incident Response and Forensics for Android Banking Malware
 Advisory Context: Operational guidance for cybersecurity teams
-Curated for: Bank of India Sentinel Platform - response context
+Curated for: Bank of India Cognidroid Platform - response context
 
 ===========================================================================
 INCIDENT CLASSIFICATION FOR ANDROID BANKING MALWARE

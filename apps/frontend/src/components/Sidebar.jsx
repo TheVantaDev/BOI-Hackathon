@@ -43,7 +43,7 @@ export default function Sidebar() {
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', lineHeight: 1.2 }}>
-              BOI Sentinel
+              BOI Cognidroid
             </div>
             <div style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 500, letterSpacing: '0.06em' }}>
               AI PLATFORM

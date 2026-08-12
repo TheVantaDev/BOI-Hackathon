@@ -6,7 +6,7 @@
  * - App monitoring for overlay trigger timing
  * - Uninstall prevention
  *
- * For: Bank of India Sentinel - Dynamic Analysis Frida Scripts
+ * For: Bank of India Cognidroid - Dynamic Analysis Frida Scripts
  */
 
 "use strict";

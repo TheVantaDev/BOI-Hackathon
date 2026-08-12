@@ -8,7 +8,7 @@ export default function LogoSection() {
   const drawerOpen = menuMaster?.isDashboardDrawerOpened;
 
   return (
-    <span aria-label="boi-sentinel-logo">
+    <span aria-label="boi-cognidroid-logo">
       <Logo compact={!drawerOpen} />
     </span>
   );

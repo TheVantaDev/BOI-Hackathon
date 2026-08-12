@@ -3,7 +3,7 @@
  * Hooks Cipher, MessageDigest, Base64, SecretKeySpec to intercept
  * encryption/decryption operations and reveal plaintext C2 data.
  *
- * For: Bank of India Sentinel - Dynamic Analysis Frida Scripts
+ * For: Bank of India Cognidroid - Dynamic Analysis Frida Scripts
  */
 
 "use strict";

@@ -3,7 +3,7 @@
  * Hooks WindowManager.addView() to detect when malware displays
  * a fake banking login screen over a real banking app.
  *
- * For: Bank of India Sentinel - Dynamic Analysis Frida Scripts
+ * For: Bank of India Cognidroid - Dynamic Analysis Frida Scripts
  */
 
 "use strict";

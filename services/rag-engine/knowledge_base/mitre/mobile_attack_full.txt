@@ -1,6 +1,6 @@
 MITRE ATT&CK for Mobile - Android Banking Malware Techniques
 Source: MITRE ATT&CK Mobile Matrix (https://attack.mitre.org/matrices/mobile/)
-Curated for: Bank of India Sentinel Platform - Android threat analysis context
+Curated for: Bank of India Cognidroid Platform - Android threat analysis context
 
 ===========================================================================
 T1412 - Capture SMS Messages

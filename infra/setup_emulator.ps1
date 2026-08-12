@@ -12,7 +12,7 @@ param(
     [int]   $AdbPort   = 5555
 )
 
-Write-Host "=== BOI Sentinel - Android Emulator Setup ===" -ForegroundColor Cyan
+Write-Host "=== BOI Cognidroid - Android Emulator Setup ===" -ForegroundColor Cyan
 Write-Host ""
 
 # ─── Locate Android SDK ───────────────────────────────────────────────────────

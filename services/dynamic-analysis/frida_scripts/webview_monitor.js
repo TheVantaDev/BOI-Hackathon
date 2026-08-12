@@ -2,7 +2,7 @@
  * WebView Monitor
  * Monitors URLs loaded inside Android WebViews.
  *
- * For: Bank of India Sentinel
+ * For: Bank of India Cognidroid
  */
 
 "use strict";

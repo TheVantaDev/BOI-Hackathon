@@ -2,7 +2,7 @@
  * Native Library Monitor
  * Detects loading of native libraries at runtime.
  *
- * For: Bank of India Sentinel
+ * For: Bank of India Cognidroid
  */
 
 "use strict";

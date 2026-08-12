@@ -2,7 +2,7 @@
  * Location Monitor
  * Detects access to device location APIs.
  *
- * For: Bank of India Sentinel
+ * For: Bank of India Cognidroid
  */
 
 "use strict";

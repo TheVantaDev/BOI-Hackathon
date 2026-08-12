@@ -1,4 +1,4 @@
-# BOI Sentinel AI
+# BOI Cognidroid AI
 
 > Generative AI-powered Android APK malware investigation and risk assessment platform for banking security.
 
@@ -13,7 +13,7 @@
 
 ## Overview
 
-BOI Sentinel AI automates the investigation of suspicious Android APKs targeting banking customers. It combines reverse engineering, static analysis, dynamic sandbox execution, threat intelligence, and multi-agent generative AI to produce explainable risk scores and detailed investigation reports — without requiring manual malware analyst intervention and support.
+BOI Cognidroid AI automates the investigation of suspicious Android APKs targeting banking customers. It combines reverse engineering, static analysis, dynamic sandbox execution, threat intelligence, and multi-agent generative AI to produce explainable risk scores and detailed investigation reports — without requiring manual malware analyst intervention and support.
 
 Built for **Bank of India Hackathon Problem Statement-1**: *Generative AI-Based Automated Analysis and Risk Scoring of Fraudulent APKs*.
 

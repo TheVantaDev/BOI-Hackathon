@@ -2,7 +2,7 @@
  * Debug Monitor
  * Detects anti-debugging checks.
  *
- * For: Bank of India Sentinel
+ * For: Bank of India Cognidroid
  */
 
 "use strict";

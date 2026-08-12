@@ -5,7 +5,7 @@ from routers import upload, analysis, reports, dashboard, actions
 from services.db import init_db
 
 app = FastAPI(
-    title="BOI Sentinel AI",
+    title="BOI Cognidroid AI",
     version="1.0.0",
     description="Generative AI-powered Android APK malware investigation platform",
     docs_url="/api/docs",
@@ -40,4 +40,4 @@ def on_startup():
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "ok", "service": "BOI Sentinel AI"}
+    return {"status": "ok", "service": "BOI Cognidroid AI"}

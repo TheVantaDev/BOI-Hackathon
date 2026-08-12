@@ -14,7 +14,7 @@ export default {
           700: '#1a2540',
           600: '#1e2d4a',
         },
-        sentinel: {
+        cognidroid: {
           cyan: '#06b6d4',
           blue: '#3b82f6',
         },

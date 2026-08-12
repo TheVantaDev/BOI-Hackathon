@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://sentinel:sentinel_pass@localhost:5432/sentinel_db"
+    database_url: str = "postgresql://cognidroid:sentinel_pass@localhost:5432/sentinel_db"
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "sentinel_minio"

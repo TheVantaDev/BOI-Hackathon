@@ -3,7 +3,7 @@
  * Hooks DexClassLoader, PathClassLoader, InMemoryDexClassLoader
  * to capture paths and contents of dynamically loaded payloads.
  *
- * For: Bank of India Sentinel - Dynamic Analysis Frida Scripts
+ * For: Bank of India Cognidroid - Dynamic Analysis Frida Scripts
  */
 
 "use strict";

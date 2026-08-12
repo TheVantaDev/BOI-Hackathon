@@ -6,7 +6,7 @@ import { alpha } from '@mui/material/styles';
 
 import { IconShield } from '@tabler/icons-react';
 
-// ==============================|| LOGO — BOI SENTINEL ||============================== //
+// ==============================|| LOGO — BOI COGNIDROID ||============================== //
 
 export default function Logo({ compact = false }) {
   const theme = useTheme();
@@ -52,7 +52,7 @@ export default function Logo({ compact = false }) {
             lineHeight: 1.2
           }}
         >
-          BOI Sentinel
+          BOI Cognidroid
         </Typography>
         <Typography
           variant="caption"

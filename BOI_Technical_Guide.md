@@ -1,4 +1,4 @@
-# BOI Sentinel AI — Complete Technical Deep-Dive
+# BOI Cognidroid AI — Complete Technical Deep-Dive
 ### Judge Preparation Guide (Zero Fumble Edition)
 
 > Every claim in this document is extracted directly from the source code. Nothing is made up.
@@ -29,7 +29,7 @@
 **Hackathon:** Bank of India Hackathon — Problem Statement 1
 **Problem:** *Generative AI-Based Automated Analysis and Risk Scoring of Fraudulent APKs*
 
-**What BOI Sentinel AI does:** It automates the end-to-end investigation of suspicious Android APK files targeting banking customers. A bank security analyst uploads an APK → the platform automatically reverse-engineers it, runs it in a sandbox, checks threat intelligence feeds, uses AI to explain findings, predicts the attacker's intent, and produces an explainable 0-100 risk score with a full investigation report — all without any manual intervention.
+**What BOI Cognidroid AI does:** It automates the end-to-end investigation of suspicious Android APK files targeting banking customers. A bank security analyst uploads an APK → the platform automatically reverse-engineers it, runs it in a sandbox, checks threat intelligence feeds, uses AI to explain findings, predicts the attacker's intent, and produces an explainable 0-100 risk score with a full investigation report — all without any manual intervention.
 
 ---
 

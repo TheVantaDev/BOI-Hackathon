@@ -4,7 +4,7 @@
  * Makes the malware believe it is running on a real physical device so it activates
  * its malicious behavior inside the MobSF sandbox.
  *
- * For: Bank of India Sentinel - Dynamic Analysis Frida Scripts
+ * For: Bank of India Cognidroid - Dynamic Analysis Frida Scripts
  */
 
 "use strict";

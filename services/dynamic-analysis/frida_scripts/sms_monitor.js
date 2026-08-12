@@ -3,7 +3,7 @@
  * Hooks SmsManager.sendTextMessage, BroadcastReceiver for SMS_RECEIVED,
  * and SmsMessage parsing to detect OTP interception by banking trojans.
  *
- * For: Bank of India Sentinel - Dynamic Analysis Frida Scripts
+ * For: Bank of India Cognidroid - Dynamic Analysis Frida Scripts
  */
 
 "use strict";

@@ -1,6 +1,6 @@
 CAPEC - Android Fraud Techniques: Social Engineering and Evasion Patterns
 Source: CAPEC database + Android security research synthesis
-Curated for: Bank of India Sentinel Platform
+Curated for: Bank of India Cognidroid Platform
 
 ===========================================================================
 CAPEC-163: Spear Phishing

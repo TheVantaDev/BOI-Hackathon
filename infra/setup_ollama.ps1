@@ -1,4 +1,4 @@
-# Pull the Ollama model used by Sentinel AI agents / action recommender.
+# Pull the Ollama model used by Cognidroid AI agents / action recommender.
 # Run from repo root or infra/:  powershell -File infra/setup_ollama.ps1
 
 $ErrorActionPreference = "Stop"

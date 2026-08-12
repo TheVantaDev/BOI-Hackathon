@@ -1,7 +1,7 @@
 rule BankingTrojan_SMSInterceptor {
     meta:
         description = "Detects SMS interception used in banking trojans"
-        author      = "BOI Sentinel AI"
+        author      = "BOI Cognidroid AI"
         severity    = "high"
     strings:
         $s1 = "READ_SMS" ascii
@@ -16,7 +16,7 @@ rule BankingTrojan_SMSInterceptor {
 rule BankingTrojan_OverlayAttack {
     meta:
         description = "Detects overlay attack capability used to phish banking credentials"
-        author      = "BOI Sentinel AI"
+        author      = "BOI Cognidroid AI"
         severity    = "critical"
     strings:
         $o1 = "SYSTEM_ALERT_WINDOW" ascii
@@ -31,7 +31,7 @@ rule BankingTrojan_OverlayAttack {
 rule BankingTrojan_CredentialHarvester {
     meta:
         description = "Detects credential harvesting patterns"
-        author      = "BOI Sentinel AI"
+        author      = "BOI Cognidroid AI"
         severity    = "critical"
     strings:
         $c1 = "password" nocase ascii
@@ -47,7 +47,7 @@ rule BankingTrojan_CredentialHarvester {
 rule Malware_DynamicCodeLoading {
     meta:
         description = "Detects dynamic code loading — indicator of dropper/downloader"
-        author      = "BOI Sentinel AI"
+        author      = "BOI Cognidroid AI"
         severity    = "high"
     strings:
         $d1 = "DexClassLoader" ascii
@@ -61,7 +61,7 @@ rule Malware_DynamicCodeLoading {
 rule Malware_C2Communication {
     meta:
         description = "Detects obfuscated C2 communication patterns"
-        author      = "BOI Sentinel AI"
+        author      = "BOI Cognidroid AI"
         severity    = "high"
     strings:
         $e1 = "Base64" ascii
@@ -76,7 +76,7 @@ rule Malware_C2Communication {
 rule OTPStealer_Indicators {
     meta:
         description = "Detects OTP stealing behavior patterns"
-        author      = "BOI Sentinel AI"
+        author      = "BOI Cognidroid AI"
         severity    = "critical"
     strings:
         $otp1 = "otp" nocase ascii
