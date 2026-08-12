@@ -105,19 +105,31 @@ def _run_decompilation_background(tmp_path: str, apk_id: str):
 
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-            # Update the backend DB via internal API so decompiled paths are saved
-            try:
-                import urllib.request, json as _json
-                payload = _json.dumps({"apk_id": apk_id, "decompiled": decompiled_info}).encode()
-                req = urllib.request.Request(
-                    f"http://backend:8000/api/analysis/{apk_id}/decompiled",
-                    data=payload,
-                    headers={"Content-Type": "application/json"},
-                    method="PATCH",
-                )
-                urllib.request.urlopen(req, timeout=10)
-            except Exception as patch_exc:
-                logger.warning("[bg-decompile] Could not patch decompiled paths: %s", patch_exc)
+            # Update the backend DB via internal API so decompiled paths are saved.
+            # Retry with backoff because the main pipeline may not have saved the
+            # AnalysisResult row to the DB yet when decompilation finishes early.
+            import urllib.request, json as _json
+            import time as _time
+            patch_payload = _json.dumps({"apk_id": apk_id, "decompiled": decompiled_info}).encode()
+            patch_ok = False
+            for attempt, delay in enumerate([0, 15, 30, 60], start=1):
+                if delay:
+                    _time.sleep(delay)
+                try:
+                    req = urllib.request.Request(
+                        f"http://backend:8000/api/analysis/{apk_id}/decompiled",
+                        data=patch_payload,
+                        headers={"Content-Type": "application/json"},
+                        method="PATCH",
+                    )
+                    urllib.request.urlopen(req, timeout=10)
+                    patch_ok = True
+                    logger.info("[bg-decompile] Patched decompiled paths for apk_id=%s (attempt %d)", apk_id, attempt)
+                    break
+                except Exception as patch_exc:
+                    logger.warning("[bg-decompile] Patch attempt %d failed for %s: %s", attempt, apk_id, patch_exc)
+            if not patch_ok:
+                logger.error("[bg-decompile] All patch attempts failed for apk_id=%s — decompiled source won't appear in UI", apk_id)
 
             logger.info("[bg-decompile] Decompilation complete for apk_id=%s", apk_id)
         except Exception as exc:

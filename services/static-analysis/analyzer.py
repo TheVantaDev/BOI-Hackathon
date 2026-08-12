@@ -261,15 +261,41 @@ def extract_strings(a, d) -> Dict:
 
 
 def run_yara_scan(apk_path: str, rules_dir: str) -> List[str]:
-    matches = []
+    """
+    Scan the APK with YARA rules.
+
+    Scans BOTH the raw APK binary AND extracted DEX files. This is critical
+    because APKs are ZIP archives — malicious strings like 'DexClassLoader',
+    'sendTextMessage', 'AccessibilityService' etc. live inside compressed
+    classes.dex entries which YARA cannot see when scanning the outer ZIP.
+    """
+    matches = set()
     try:
         import yara
+        import zipfile
+
+        compiled_rules = []
         for rule_file in Path(rules_dir).glob("*.yar"):
-            rules = yara.compile(str(rule_file))
-            matches.extend(str(m) for m in rules.match(apk_path))
+            compiled_rules.append(yara.compile(str(rule_file)))
+
+        # 1. Scan the raw APK binary (catches uncompressed or manifest-level strings)
+        for rules in compiled_rules:
+            matches.update(str(m) for m in rules.match(apk_path))
+
+        # 2. Extract and scan DEX files (catches bytecode-level strings)
+        try:
+            with zipfile.ZipFile(apk_path, "r") as z:
+                for entry in z.namelist():
+                    if entry.endswith(".dex"):
+                        dex_data = z.read(entry)
+                        for rules in compiled_rules:
+                            matches.update(str(m) for m in rules.match(data=dex_data))
+        except (zipfile.BadZipFile, Exception) as zip_exc:
+            logger.warning("DEX extraction for YARA failed: %s", zip_exc)
+
     except Exception as exc:
         logger.warning("YARA scan failed: %s", exc)
-    return matches
+    return list(matches)
 
 
 # Keywords used to identify high-risk banking/SMS crime descriptions from Quark rules
@@ -418,7 +444,7 @@ def analyze_apk(apk_path: str, rules_dir: str = "/app/rules") -> Dict:
     quark_results = run_quark_analysis(apk_path)
 
     dangerous = [p for p in permissions if p["dangerous"]]
-    risk_score = len(dangerous) + len(suspicious_apis) + len(yara_matches) * 3
+    risk_score = len(dangerous) + len(suspicious_apis)
     if obfuscated:
         risk_score += 5
     if dynamic_loading:

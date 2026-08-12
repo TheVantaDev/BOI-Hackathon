@@ -48,7 +48,7 @@ import DecompiledView from './components/DecompiledView';
 import { PageEnter, StaggerItem, TabFade } from './components/Motion';
 import { classificationToChipColor } from './utils/status';
 
-const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'Threat Intel', 'AI Report', 'Actions', 'Decompiled Source'];
+const TABS = ['Overview', 'Static Analysis', 'Dynamic Analysis', 'AI Report', 'Actions', 'Decompiled Source'];
 
 const PRIORITY_COLOR = {
   P1: 'error',
@@ -281,7 +281,6 @@ export default function BoiAnalysis() {
               <SignalChip icon={IconAlertTriangle} label={`${sa.yara_matches?.length || 0} YARA Matches`} color="error" />
               <SignalChip icon={IconNetwork} label={`${da.network_requests?.length || 0} C2 Connections`} color="warning" />
               <SignalChip icon={IconCode} label={`${sa.suspicious_apis?.length || 0} Suspicious APIs`} color="warning" />
-              <SignalChip icon={IconLock} label={`${ti.mitre_techniques?.length || 0} MITRE Techniques`} color="primary" />
             </Stack>
           </Grid>
         </Grid>
@@ -464,6 +463,8 @@ export default function BoiAnalysis() {
                 {!sa.permissions?.length && <Alert severity="info">No permissions listed.</Alert>}
               </MainCard>
 
+
+
               <MainCard title="YARA Rule Matches">
                 <Stack direction="row" flexWrap="wrap" gap={1}>
                   {(sa.yara_matches || []).map((y) => (
@@ -504,6 +505,7 @@ export default function BoiAnalysis() {
                 )}
               </MainCard>
 
+              {sa.quark_crime_count > 0 && (
               <MainCard title="QuarkEngine Behavioral Crime Analysis">
                 <Grid container spacing={2}>
                   {[
@@ -522,12 +524,8 @@ export default function BoiAnalysis() {
                     </Grid>
                   ))}
                 </Grid>
-                {!sa.quark_crime_count && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                    QuarkEngine detected no malicious API call sequences — no behavioral crime patterns found.
-                  </Typography>
-                )}
               </MainCard>
+              )}
             </Stack>
           )}
 
@@ -693,53 +691,6 @@ export default function BoiAnalysis() {
 
           {tab === 3 && (
             <Stack spacing={gridSpacing}>
-              <MainCard title="MITRE ATT&CK Techniques">
-                <Grid container spacing={1.5}>
-                  {(ti.mitre_techniques || []).map((t, i) => (
-                    <Grid key={t.id || i} size={{ xs: 12, md: 6 }}>
-                      <Box
-                        sx={{
-                          p: 1.75,
-                          borderRadius: 2,
-                          bgcolor: alpha(theme.palette.error.main, 0.05),
-                          boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)'
-                        }}
-                      >
-                        <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
-                          <Typography variant="body2" fontWeight={700} color="error.main" sx={{ fontFamily: 'monospace' }}>
-                            {t.id || t.technique_id || 'T?'}
-                          </Typography>
-                          <Chip size="small" label={t.tactic || '—'} />
-                        </Stack>
-                        <Typography variant="body2" color="text.secondary">
-                          {t.name || t.technique || ''}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-                {!ti.mitre_techniques?.length && <Alert severity="info">No MITRE mappings.</Alert>}
-              </MainCard>
-
-              <MainCard title="Malicious Indicators">
-                <Stack spacing={1}>
-                  {[...(ti.malicious_domains || []), ...(ti.malicious_ips || [])].map((ioc) => (
-                    <Alert key={ioc} severity="error" icon={<IconAlertTriangle size={16} />} variant="outlined">
-                      <Typography sx={{ fontFamily: 'monospace', fontSize: 13 }}>{ioc}</Typography>
-                    </Alert>
-                  ))}
-                  {!ti.malicious_domains?.length && !ti.malicious_ips?.length && (
-                    <Typography variant="body2" color="text.secondary">
-                      No malicious IOCs listed.
-                    </Typography>
-                  )}
-                </Stack>
-              </MainCard>
-            </Stack>
-          )}
-
-          {tab === 4 && (
-            <Stack spacing={gridSpacing}>
               <MainCard
                 title="AI Investigation Report"
                 secondary={
@@ -843,7 +794,7 @@ export default function BoiAnalysis() {
             </Stack>
           )}
 
-          {tab === 5 && (
+          {tab === 4 && (
             <Stack spacing={gridSpacing}>
               <MainCard
                 title={
@@ -909,7 +860,7 @@ export default function BoiAnalysis() {
             </Stack>
           )}
 
-          {tab === 6 && <DecompiledView apkId={id} />}
+          {tab === 5 && <DecompiledView apkId={id} />}
           </TabFade>
         </Box>
       </MainCard>
