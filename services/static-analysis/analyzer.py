@@ -132,7 +132,7 @@ def extract_all_api_classes(dx) -> List[str]:
     found = set()
     try:
         for cls in dx.get_classes():
-            raw = cls.get_vm_class().get_name()   # e.g. "Landroid/telephony/SmsManager;"
+            raw = str(cls.get_vm_class().get_name())   # MUTF8String → str
             # Normalise Dalvik format → dotted Java name
             name = raw.lstrip("L").rstrip(";").replace("/", ".")
             if name.startswith("android.") or name.startswith("javax.") or \

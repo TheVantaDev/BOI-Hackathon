@@ -27,6 +27,8 @@ MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "sentinel_minio_pass")
 FRIDA_SCRIPTS_DIR = Path(os.getenv("FRIDA_SCRIPTS_DIR", "/app/frida_scripts"))
 
 # Ordered list of Frida scripts to inject during dynamic analysis
+FRIDA_PORT = os.getenv("FRIDA_PORT", "27043")
+
 # anti_emulation_bypass must run FIRST so malware doesn't detect the sandbox
 FRIDA_SCRIPT_ORDER = [
     "anti_emulation_bypass.js",
@@ -592,6 +594,54 @@ async def _run_mobsf_analysis(apk_id: str, minio_path: str, sha256: str = ""):
         frida_results
     )
 
+import re as _re
+import zipfile as _zipfile
+
+def _extract_package_name(apk_path: str) -> str:
+    """
+    Extract the package name from an APK's binary AndroidManifest.xml.
+
+    Android binary XML stores strings in UTF-16LE in its string pool.
+    We decode the manifest as UTF-16LE and regex-match the first
+    dotted-package-name that isn't a known Android framework namespace.
+    """
+    # Framework/system namespaces to skip — these are NOT app package names
+    SKIP_PREFIXES = (
+        "schemas.android.",
+        "xmlns.android.",
+        "res.android.",
+        "android.intent.",
+        "android.permission.",
+        "android.hardware.",
+        "android.os.",
+        "android.app.",
+        "android.content.",
+        "android.view.",
+        "android.widget.",
+        "android.provider.",
+        "android.net.",
+        "android.media.",
+    )
+    SKIP_EXACT = {
+        "android.intent.action",
+        "android.intent.category",
+    }
+    try:
+        with _zipfile.ZipFile(apk_path) as z:
+            data = z.read("AndroidManifest.xml")
+        text = data.decode("utf-16-le", errors="ignore")
+        matches = _re.findall(r"([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,})", text)
+        for m in matches:
+            if m in SKIP_EXACT:
+                continue
+            if any(m.startswith(p) for p in SKIP_PREFIXES):
+                continue
+            return m
+    except Exception as exc:
+        logger.warning("Failed to extract package name from APK: %s", exc)
+    return None
+
+
 async def _run_adb_frida_analysis(
     apk_id: str,
     minio_path: str,
@@ -638,7 +688,7 @@ async def _run_adb_frida_analysis(
         logger.info("Installing APK onto emulator via ADB: %s", apk_path)
         subprocess.run(
             ["adb", "-s", "host.docker.internal:5555", "install", "-r", apk_path],
-            check=True, capture_output=True, timeout=30
+            check=True, capture_output=True, timeout=60
         )
 
         # Get list of installed packages after
@@ -651,6 +701,16 @@ async def _run_adb_frida_analysis(
 
         if new_pkgs:
             installed_pkg = list(new_pkgs)[0].replace("package:", "").strip()
+
+        # BUG FIX: On reinstall (-r flag), pkgs_before == pkgs_after so new_pkgs
+        # is empty, causing installed_pkg to stay None and Frida to be skipped.
+        # Fallback: extract package name directly from the APK's binary manifest.
+        if not installed_pkg:
+            installed_pkg = _extract_package_name(apk_path)
+            if installed_pkg:
+                logger.info("Reinstall detected — extracted package name from APK: %s", installed_pkg)
+            else:
+                logger.warning("Could not determine package name for %s", apk_id)
 
         if installed_pkg:
             logger.info("Launching installed package on emulator via monkey: %s", installed_pkg)
@@ -678,7 +738,7 @@ async def _run_adb_frida_analysis(
                     )
                     subprocess.run(
                         [
-                            "frida", "-H", "host.docker.internal:27042",
+                            "frida", "-H", f"host.docker.internal:{FRIDA_PORT}",
                             "-l", script_path,
                             "-f", installed_pkg,
                             "--no-pause",

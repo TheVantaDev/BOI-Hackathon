@@ -58,3 +58,6 @@ Thumbs.db
 boi_submission.pdf
 boi-submisson.pdf
 datasets/raw
+
+# Binaries & Tools
+frida-server*
