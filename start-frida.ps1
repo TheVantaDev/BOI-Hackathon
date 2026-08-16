@@ -55,9 +55,9 @@ if ($fridaCheck -match "No such file") {
     }
 }
 
-# Start frida-server — use -D flag to daemonize
-adb -s $emulator shell "/data/local/tmp/frida-server -l 0.0.0.0:27042 -D" 2>&1 | Out-Null
-Start-Sleep -Seconds 2
+# Start frida-server in background
+Start-Process -NoNewWindow -FilePath "adb" -ArgumentList "-s", $emulator, "shell", "/data/local/tmp/frida-server -l 0.0.0.0:27042"
+Start-Sleep -Seconds 3
 
 $fridaProc = adb -s $emulator shell "ps -e" 2>&1 | Out-String
 if ($fridaProc -match "frida-server") {
